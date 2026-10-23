@@ -1,0 +1,33 @@
+config:
+  OTEL_EXPORTER_OTLP_ENDPOINT: ""
+  OTEL_EXPORTER_OTLP_AUTH_MODE: workload_identity
+  # Supply the full URLs from the Application Insights OTLP Connection Info.
+  OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ""
+  OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ""
+  OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: ""
+  OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+  OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE: DELTA
+  OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION: base2_exponential_bucket_histogram
+  OTEL_RESOURCE_ATTRIBUTES: "microsoft.applicationId="
+  OPENAI_BASE_URL: https://mf-example.services.ai.azure.com/openai/v1/
+  OPENAI_CHAT_MODEL: gpt-example
+  OPENAI_AUTH_MODE: workload_identity
+
+secret:
+  data:
+    APPLICATIONINSIGHTS_CONNECTION_STRING: ""
+    OPENAI_API_KEY: ""
+
+workloadIdentity:
+  enabled: true
+  clientId: 11111111-1111-1111-1111-111111111111
+  serviceAccounts:
+    fourth-coffee-mcp:
+      name: fourth-coffee-mcp-telemetry
+      create: true
+      # Replace with a telemetry-only identity, without model access.
+      clientId: 22222222-2222-2222-2222-222222222222
+
+components:
+  fourthCoffeeMcp:
+    workloadIdentity: true

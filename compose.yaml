@@ -1,0 +1,126 @@
+x-app-build: &app-build
+  context: .
+  dockerfile: Dockerfile
+
+x-app-environment: &app-environment
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  ENABLE_INSTRUMENTATION: ${ENABLE_INSTRUMENTATION:-true}
+  OTEL_SERVICE_NAMESPACE: ${OTEL_SERVICE_NAMESPACE:-fourth-coffee}
+  OTEL_EXPORTER_OTLP_AUTH_MODE: ${OTEL_EXPORTER_OTLP_AUTH_MODE:-none}
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT_DOCKER:-http://otel-collector:4318}
+  APPLICATIONINSIGHTS_CONNECTION_STRING: ${APPLICATIONINSIGHTS_CONNECTION_STRING:-}
+
+x-model-environment: &model-environment
+  OPENAI_BASE_URL: ${OPENAI_BASE_URL_DOCKER:-http://host.docker.internal:11434/v1}
+  OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-qwen3:8b}
+  OPENAI_AUTH_MODE: ${OPENAI_AUTH_MODE:-api_key}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-ollama}
+
+x-app-healthcheck: &app-healthcheck
+  test: ["CMD", "fourth-coffee-healthcheck"]
+  interval: 30s
+  timeout: 5s
+  retries: 5
+  start_period: 25s
+
+x-app: &app
+  image: fourth-coffee:${IMAGE_TAG:-latest}
+  build: *app-build
+  extra_hosts:
+    - host.docker.internal:host-gateway
+  healthcheck: *app-healthcheck
+  restart: unless-stopped
+
+services:
+  fourth-coffee-mcp:
+    <<: *app
+    environment:
+      <<: *app-environment
+      SERVICE: fourth-coffee-mcp
+      PORT: 8101
+
+  ops-agent:
+    <<: *app
+    depends_on:
+      fourth-coffee-mcp:
+        condition: service_healthy
+    environment:
+      <<: [*app-environment, *model-environment]
+      OPS_AGENT_PUBLIC_BASE_URL: http://ops-agent:8202
+      OPS_DEMO_WORK_SECONDS: ${OPS_DEMO_WORK_SECONDS:-0}
+      OPS_DEMO_CONCURRENCY: ${OPS_DEMO_CONCURRENCY:-2}
+      FOURTH_COFFEE_MCP_URL: http://fourth-coffee-mcp:8101/mcp/
+      SERVICE: ops-agent
+      PORT: 8202
+
+  concierge:
+    <<: *app
+    depends_on:
+      fourth-coffee-mcp:
+        condition: service_healthy
+      ops-agent:
+        condition: service_healthy
+    ports:
+      - "8301:8301"
+    environment:
+      <<: [*app-environment, *model-environment]
+      FOURTH_COFFEE_MCP_URL: http://fourth-coffee-mcp:8101/mcp/
+      OPS_AGENT_URL: http://ops-agent:8202
+      SERVICE: concierge
+      PORT: 8301
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.114.0
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./deploy/otel/collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "4318:4318"
+      - "9464:9464"
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.2.1
+    command: ["-config.file=/etc/loki/config.yaml"]
+    volumes:
+      - ./deploy/otel/loki-config.yaml:/etc/loki/config.yaml:ro
+    ports:
+      - "3100:3100"
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:2.6.1
+    command: ["-config.file=/etc/tempo/config.yaml"]
+    volumes:
+      - ./deploy/otel/tempo-config.yaml:/etc/tempo/config.yaml:ro
+    ports:
+      - "3200:3200"
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    volumes:
+      - ./deploy/otel/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - otel-collector
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.2.2
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    volumes:
+      - ./deploy/otel/grafana/provisioning/datasources/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - loki
+      - tempo
+      - prometheus
+    restart: unless-stopped
