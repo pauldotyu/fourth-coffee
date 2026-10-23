@@ -1,0 +1,7 @@
+apiVersion: v2
+name: fourth-coffee
+description: Slim MCP and A2A coffee demo
+type: application
+icon: https://raw.githubusercontent.com/pauldotyu/fourth-coffee/main/deploy/helm/fourth-coffee/icon.svg
+version: 0.1.0
+appVersion: "0.1.0"
