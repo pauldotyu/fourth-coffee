@@ -22,10 +22,14 @@
         --crema: #d6ae82;
         --persimmon: #ee6847;
         --porcelain: #fffdfa;
+        --ink-soft: #6b564a;
+        --cream-card: #f5ecdd;
         background: var(--oat);
         color: var(--espresso);
       }
-      * { box-sizing: border-box; }
+      * {
+        box-sizing: border-box;
+      }
       body {
         margin: 0;
         min-height: 100vh;
@@ -33,20 +37,60 @@
           radial-gradient(circle at 10% 5%, rgba(214, 247, 111, 0.22) 0, transparent 24rem),
           radial-gradient(circle at 92% 8%, rgba(214, 174, 130, 0.2) 0, transparent 26rem),
           var(--oat);
+        color: var(--espresso);
       }
-      button, textarea, input { font: inherit; }
-      button { cursor: pointer; }
-      .shell { max-width: 1180px; margin: 0 auto; padding: 2.5rem 1.25rem; }
-      header {
+      main {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 0 1.25rem 7rem;
+      }
+
+      .site-header {
         display: flex;
-        align-items: flex-end;
+        align-items: center;
         justify-content: space-between;
+        gap: 1rem;
+        padding: 1.25rem 0;
+      }
+      .brand {
+        font-family: "Bricolage Grotesque", Georgia, serif;
+        font-size: 1.75rem;
+        font-weight: 700;
+        letter-spacing: -0.03em;
+      }
+      .nav-links {
+        display: flex;
+        gap: 1.5rem;
+      }
+      .nav-links a {
+        color: var(--ink-soft);
+        text-decoration: none;
+        font-weight: 700;
+        font-size: 0.9rem;
+      }
+      .nav-links a:hover {
+        color: var(--espresso);
+      }
+      .nav-cta {
+        border: 0;
+        border-radius: 999px;
+        padding: 0.7rem 1.2rem;
+        background: var(--espresso);
+        color: var(--oat);
+        font-weight: 800;
+        font-size: 0.85rem;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
         gap: 2rem;
-        margin-bottom: 1.5rem;
+        align-items: center;
+        padding: 3rem 0 2.5rem;
       }
       .eyebrow {
         margin: 0 0 0.4rem;
-        color: #6b564a;
+        color: #8a756a;
         font-size: 0.78rem;
         font-weight: 800;
         letter-spacing: 0.14em;
@@ -54,38 +98,203 @@
       }
       h1 {
         margin: 0;
-        font-family: "Bricolage Grotesque", Georgia, "Times New Roman", serif;
+        font-family: "Bricolage Grotesque", Georgia, serif;
         font-weight: 700;
-        font-size: clamp(2.4rem, 6vw, 4.8rem);
+        font-size: clamp(2.8rem, 6.5vw, 5rem);
         line-height: 0.94;
         letter-spacing: -0.055em;
         color: var(--espresso);
       }
       .subtitle {
-        max-width: 31rem;
-        margin: 0;
+        max-width: 34rem;
+        margin: 1rem 0 0;
         color: #715c51;
         font-size: 1rem;
         line-height: 1.6;
       }
-      .layout {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) 320px;
-        gap: 1rem;
-        align-items: stretch;
+      .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        margin-top: 1.75rem;
       }
-      .card {
+      .btn-primary,
+      .btn-secondary {
+        border: 0;
+        border-radius: 999px;
+        padding: 0.9rem 1.5rem;
+        font-weight: 800;
+        font-size: 0.95rem;
+      }
+      .btn-primary {
+        background: var(--lime);
+        color: var(--espresso);
+      }
+      .btn-secondary {
+        background: var(--porcelain);
+        color: var(--espresso);
+        border: 1px solid rgba(36, 23, 16, 0.14);
+      }
+      .hero-art {
+        display: grid;
+        place-items: center;
+        min-height: 280px;
+        border-radius: 32px;
+        background:
+          radial-gradient(circle at 50% 30%, rgba(214, 247, 111, 0.35), transparent 60%),
+          linear-gradient(160deg, var(--cream-card), var(--porcelain));
+        border: 1px solid rgba(36, 23, 16, 0.12);
+        box-shadow: 0 24px 70px rgba(92, 54, 37, 0.1);
+      }
+      .hero-art .cup {
+        font-size: 7rem;
+        filter: drop-shadow(0 18px 24px rgba(36, 23, 16, 0.18));
+      }
+
+      .menu,
+      .brew,
+      .visit {
+        padding: 2.5rem 0;
+      }
+      .menu h2,
+      .brew h2,
+      .visit h2 {
+        font-family: "Bricolage Grotesque", Georgia, serif;
+        font-size: 2rem;
+        letter-spacing: -0.03em;
+        margin: 0 0 1.25rem;
+      }
+      .menu-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1rem;
+      }
+      .menu-card {
+        background: var(--porcelain);
         border: 1px solid rgba(36, 23, 16, 0.12);
         border-radius: 24px;
-        background: var(--porcelain);
-        box-shadow: 0 24px 70px rgba(92, 54, 37, 0.1);
-        backdrop-filter: blur(12px);
+        padding: 1.5rem;
+        box-shadow: 0 18px 50px rgba(92, 54, 37, 0.08);
       }
-      .chat-card {
+      .menu-card h3 {
+        margin: 0 0 0.4rem;
+        font-family: "Bricolage Grotesque", Georgia, serif;
+        font-size: 1.4rem;
+      }
+      .menu-card p {
+        margin: 0;
+        color: #7b675c;
+        line-height: 1.5;
+      }
+      .menu-tag {
+        display: inline-block;
+        margin-top: 0.9rem;
+        padding: 0.3rem 0.7rem;
+        border-radius: 999px;
+        background: var(--lime);
+        color: var(--espresso);
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .brew-steps {
+        margin: 0;
+        padding: 0;
+        list-style: none;
         display: grid;
-        grid-template-rows: auto minmax(340px, 1fr) auto;
-        min-height: 640px;
+        gap: 0.9rem;
+        counter-reset: step;
+      }
+      .brew-steps li {
+        position: relative;
+        padding-left: 3rem;
+        background: var(--porcelain);
+        border: 1px solid rgba(36, 23, 16, 0.12);
+        border-radius: 18px;
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+        color: #4d382d;
+        font-weight: 600;
+      }
+      .brew-steps li::before {
+        counter-increment: step;
+        content: counter(step);
+        position: absolute;
+        left: 1rem;
+        top: 50%;
+        transform: translateY(-50%);
+        display: grid;
+        place-items: center;
+        width: 2rem;
+        height: 2rem;
+        border-radius: 50%;
+        background: var(--lime);
+        color: var(--espresso);
+        font-weight: 800;
+      }
+
+      .visit {
+        padding-bottom: 2rem;
+      }
+      .visit p {
+        max-width: 52rem;
+        color: #6b564a;
+        line-height: 1.7;
+      }
+
+      footer {
+        border-top: 1px solid rgba(36, 23, 16, 0.12);
+        padding: 2rem 0 0;
+        color: #8a756a;
+        font-size: 0.85rem;
+      }
+
+      /* Floating concierge chat */
+      .chat-widget {
+        position: fixed;
+        left: 1rem;
+        bottom: 1rem;
+        z-index: 1000;
+      }
+      .chat-launcher {
+        position: fixed;
+        left: 1rem;
+        bottom: 1rem;
+        width: 56px;
+        height: 56px;
+        border: 0;
+        border-radius: 50%;
+        background: var(--lime);
+        color: var(--espresso);
+        font-size: 1.5rem;
+        box-shadow: 0 16px 34px rgba(36, 23, 16, 0.25);
+      }
+      .chat-panel {
+        position: fixed;
+        left: 1rem;
+        bottom: calc(1rem + 68px);
+        width: min(460px, calc(100vw - 2rem));
+        height: min(560px, calc(100vh - 8rem));
+        display: flex;
+        flex-direction: column;
+        background: var(--porcelain);
+        border: 1px solid rgba(36, 23, 16, 0.12);
+        border-radius: 24px;
+        box-shadow: 0 30px 80px rgba(36, 23, 16, 0.22);
         overflow: hidden;
+        opacity: 0;
+        transform: translateY(18px);
+        transition: opacity 180ms ease, transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+      }
+      .chat-panel.open {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      .chat-panel.closed {
+        opacity: 0;
+        transform: translateY(18px);
       }
       .chat-heading {
         display: flex;
@@ -103,20 +312,27 @@
         background: var(--lime);
         font-size: 1.35rem;
       }
-      .chat-heading strong, .chat-heading small { display: block; }
-      .chat-heading small { margin-top: 0.12rem; color: #8a756a; }
+      .chat-heading strong,
+      .chat-heading small {
+        display: block;
+      }
+      .chat-heading small {
+        margin-top: 0.12rem;
+        color: #8a756a;
+      }
       #chat {
         display: flex;
         flex-direction: column;
         gap: 0.9rem;
         overflow-y: auto;
         padding: 1.25rem;
+        flex: 1;
       }
       .message {
         max-width: 84%;
         padding: 0.85rem 1rem;
         border-radius: 18px 18px 18px 5px;
-        background: #f5ecdd;
+        background: var(--cream-card);
         color: #39261d;
         line-height: 1.5;
         white-space: pre-wrap;
@@ -136,6 +352,27 @@
         opacity: 0.65;
         text-transform: uppercase;
       }
+      .quick-list {
+        display: flex;
+        gap: 0.5rem;
+        padding: 0.75rem 1rem;
+        overflow-x: auto;
+      }
+      .quick {
+        flex: 0 0 auto;
+        padding: 0.55rem 0.8rem;
+        border: 1px solid rgba(36, 23, 16, 0.14);
+        border-radius: 999px;
+        background: var(--porcelain);
+        color: #49352b;
+        font-size: 0.8rem;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+      .quick:hover {
+        border-color: var(--lime);
+        background: #fff7e6;
+      }
       #chat-form {
         display: grid;
         grid-template-columns: 1fr auto;
@@ -144,7 +381,8 @@
         border-top: 1px solid rgba(214, 174, 130, 0.35);
         background: var(--porcelain);
       }
-      textarea, input {
+      textarea,
+      input {
         width: 100%;
         border: 1px solid rgba(36, 23, 16, 0.2);
         border-radius: 14px;
@@ -160,7 +398,8 @@
         line-height: 50px;
         overflow: hidden;
       }
-      textarea:focus, input:focus {
+      textarea:focus,
+      input:focus {
         border-color: var(--espresso);
         box-shadow: 0 0 0 3px rgba(214, 247, 111, 0.35);
       }
@@ -172,15 +411,11 @@
         color: var(--espresso);
         font-weight: 800;
       }
-      .side { display: flex; flex-direction: column; gap: 1rem; }
-      .panel { padding: 1.25rem; }
-      .panel h2 { margin: 0 0 0.35rem; font-size: 1.05rem; }
-      .panel-copy { margin: 0; color: #7b675c; font-size: 0.9rem; line-height: 1.45; }
-      .status {
+      #draft-status {
         display: flex;
         align-items: center;
         gap: 0.5rem;
-        margin: 1.1rem 0;
+        margin: 0 1rem 0.75rem;
         padding: 0.75rem;
         border-radius: 14px;
         background: #f5ecdd;
@@ -188,7 +423,10 @@
         font-size: 0.88rem;
         font-weight: 700;
       }
-      .status.ready { background: var(--lime); color: var(--espresso); }
+      #draft-status.ready {
+        background: var(--lime);
+        color: var(--espresso);
+      }
       .dot {
         width: 9px;
         height: 9px;
@@ -196,10 +434,13 @@
         background: currentColor;
         opacity: 0.7;
       }
-      #customer-name { padding: 0.8rem; }
+      #customer-name {
+        margin: 0 1rem 0.75rem;
+        padding: 0.8rem;
+      }
       #confirm {
-        width: 100%;
-        margin-top: 0.7rem;
+        margin: 0 1rem 1rem;
+        width: calc(100% - 2rem);
         padding: 0.9rem;
         border: 0;
         border-radius: 14px;
@@ -212,116 +453,159 @@
         background: rgba(36, 23, 16, 0.08);
         color: #9a8880;
       }
-      .quick-list { display: grid; gap: 0.55rem; margin-top: 1rem; }
-      .quick {
-        padding: 0.75rem 0.8rem;
-        border: 1px solid rgba(36, 23, 16, 0.14);
-        border-radius: 14px;
-        background: var(--porcelain);
-        color: #49352b;
-        text-align: left;
-        line-height: 1.35;
-      }
-      .quick:hover { border-color: var(--lime); background: #fff7e6; }
+
       @media (max-width: 820px) {
-        header { display: block; }
-        .subtitle { margin-top: 1rem; }
-        .layout { grid-template-columns: 1fr; }
-        .chat-card { min-height: 580px; }
-        .side { order: -1; }
+        main {
+          padding-bottom: 8rem;
+        }
+        .hero {
+          grid-template-columns: 1fr;
+        }
+        .hero-art {
+          min-height: 180px;
+        }
+        .menu-grid {
+          grid-template-columns: 1fr;
+        }
+        .nav-links {
+          display: none;
+        }
       }
       @media (max-width: 520px) {
-        .shell { padding: 1.5rem 0.75rem; }
-        #chat-form { grid-template-columns: 1fr; }
-        .send { min-height: 48px; }
-        .message { max-width: 94%; }
+        .chat-widget,
+        .chat-launcher,
+        .chat-panel {
+          left: 0.75rem;
+        }
+        .chat-panel {
+          width: calc(100vw - 1.5rem);
+        }
       }
     </style>
   </head>
   <body>
-    <main class="shell">
-      <header>
-        <div>
+    <main>
+      <header class="site-header">
+        <div class="brand">Fourth Coffee</div>
+        <nav class="nav-links" aria-label="Primary">
+          <a href="#menu">Menu</a>
+          <a href="#brew">The Barista</a>
+          <a href="#visit">Visit</a>
+        </nav>
+        <button class="nav-cta" type="button" data-open-chat="order">Order ahead</button>
+      </header>
+
+      <section class="hero" id="top">
+        <div class="hero-copy">
           <p class="eyebrow">Fourth Coffee</p>
           <h1>GOOD MORNING.<br />GREAT COFFEE.</h1>
-        </div>
-        <p class="subtitle">
-          Your daily bright spot. Build a coffee with a conversational concierge.
-          Brew facts and prices come from MCP tools. Operational questions go to a
-          specialist over A2A.
-        </p>
-      </header>
-      <div class="layout">
-        <section class="card chat-card" aria-label="Concierge chat">
-          <div class="chat-heading">
-            <div class="avatar" aria-hidden="true">☕</div>
-            <div>
-              <strong>The Fourth Brew</strong>
-              <small>Just brewing along</small>
-            </div>
+          <p class="subtitle">
+            Your daily bright spot. A conversational coffee concierge that builds,
+            checks, and brews.
+          </p>
+          <div class="hero-actions">
+            <button class="btn-primary" type="button" data-open-chat="order">Order ahead</button>
+            <button class="btn-secondary" type="button" data-open-chat="menu">Ask the Barista</button>
           </div>
-          <div id="chat" aria-live="polite"></div>
-          <form id="chat-form">
-            <textarea
-              id="message"
-              aria-label="Message"
-              placeholder="Describe your coffee..."
-            ></textarea>
-            <button class="send" type="submit">Send</button>
-          </form>
-        </section>
-        <aside class="side">
-          <section class="card panel">
-            <h2>Your coffee</h2>
-            <p class="panel-copy">
-              Your coffee will appear here. Press Confirm when you're happy with it.
-            </p>
-            <div id="draft-status" class="status">
-              <span class="dot"></span>
-              <span>What would you brew today?</span>
-            </div>
-            <input
-              id="customer-name"
-              aria-label="Customer name"
-              placeholder="Name for pickup"
-            />
-            <button id="confirm" type="button" disabled>
-              Pick your coffee...
-            </button>
-          </section>
-          <section class="card panel">
-            <h2>Meet your next usual</h2>
-            <p class="panel-copy">Drinks that we can't get enough of.</p>
-            <div class="quick-list">
-              <button class="quick" type="button" data-prompt="surprise me">
-                Surprise Me! ☕
-              </button>
-              <button
-                class="quick"
-                type="button"
-                data-prompt="The Daily: double shot, chocolate shavings, whipped cream."
-              >
-                The Daily — Double Shot
-              </button>
-              <button
-                class="quick"
-                type="button"
-                data-prompt="Cold Brew: triple shot, oat milk, cinnamon."
-              >
-                Cold Brew — Triple Shot
-              </button>
-              <button
-                class="quick"
-                type="button"
-                data-prompt="Oat Latte: double shot, whipped cream."
-              >
-                Oat Latte — Double Shot
-              </button>
-            </div>
-          </section>
-        </aside>
-      </div>
+        </div>
+        <div class="hero-art" aria-hidden="true">
+          <div class="cup">☕</div>
+        </div>
+      </section>
+
+      <section class="menu" id="menu">
+        <h2>The Menu</h2>
+        <div class="menu-grid">
+          <article class="menu-card">
+            <h3>The Daily</h3>
+            <p>Double shot, chocolate shavings, whipped cream.</p>
+            <span class="menu-tag">Popular</span>
+          </article>
+          <article class="menu-card">
+            <h3>Cold Brew</h3>
+            <p>Triple shot, oat milk, cinnamon.</p>
+            <span class="menu-tag">Slow bar</span>
+          </article>
+          <article class="menu-card">
+            <h3>Oat Latte</h3>
+            <p>Double shot, whipped cream.</p>
+            <span class="menu-tag">Creamy</span>
+          </article>
+        </div>
+      </section>
+
+      <section class="brew" id="brew">
+        <h2>The Barista</h2>
+        <ol class="brew-steps">
+          <li>Tell the Barista what you want.</li>
+          <li>The Barista builds a coffee.</li>
+          <li>Ops checks fulfillment.</li>
+          <li>You confirm and we brew.</li>
+        </ol>
+      </section>
+
+      <section class="visit" id="visit">
+        <h2>Visit</h2>
+        <p>
+          Fourth Coffee is a small-batch coffee counter with a conversational
+          concierge, deterministic MCP tools, and an operations specialist that
+          keeps fulfillment honest.
+        </p>
+      </section>
     </main>
+
+    <footer>
+      <p>Fourth Coffee — good coffee. Better mornings.</p>
+    </footer>
+
+    <div class="chat-widget">
+      <button
+        class="chat-launcher"
+        id="chat-launcher"
+        type="button"
+        aria-expanded="false"
+        aria-controls="chat-panel"
+      >
+        ☕
+      </button>
+      <section class="chat-panel" id="chat-panel" hidden>
+        <div class="chat-heading">
+          <div class="avatar" aria-hidden="true">☕</div>
+          <div>
+            <strong>The Barista</strong>
+            <small>Just brewing along</small>
+          </div>
+        </div>
+        <div id="chat" aria-live="polite"></div>
+        <div class="quick-list">
+          <button class="quick" type="button" data-prompt="surprise me">Surprise Me! ☕</button>
+          <button class="quick" type="button" data-prompt="The Daily: double shot, chocolate shavings, whipped cream.">
+            The Daily — Double Shot
+          </button>
+          <button class="quick" type="button" data-prompt="Cold Brew: triple shot, oat milk, cinnamon.">
+            Cold Brew — Triple Shot
+          </button>
+          <button class="quick" type="button" data-prompt="Oat Latte: double shot, whipped cream.">
+            Oat Latte — Double Shot
+          </button>
+        </div>
+        <form id="chat-form">
+          <textarea
+            id="message"
+            aria-label="Message"
+            placeholder="Describe your coffee..."
+          ></textarea>
+          <button class="send" type="submit">Send</button>
+        </form>
+        <div id="draft-status" class="status">
+          <span class="dot"></span>
+          <span>What would you brew today?</span>
+        </div>
+        <input id="customer-name" placeholder="Name for pickup" />
+        <button id="confirm" type="button" disabled>Pick your coffee...</button>
+      </section>
+    </div>
+
     <script>
       const chat = document.getElementById('chat');
       const form = document.getElementById('chat-form');
@@ -330,12 +614,15 @@
       const confirmButton = document.getElementById('confirm');
       const draftStatus = document.getElementById('draft-status');
       const sendButton = form.querySelector('button');
+      const chatPanel = document.getElementById('chat-panel');
+      const chatLauncher = document.getElementById('chat-launcher');
+
       const sessionKey = 'fourth-coffee-session-id';
       const uuidv4 = () => {
         if (typeof crypto !== 'undefined' && crypto.randomUUID) {
           return crypto.randomUUID();
         }
-        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
           const r = Math.random() * 16 | 0;
           return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
         });
@@ -361,17 +648,15 @@
         draftStatus.classList.toggle('ready', ready);
         draftStatus.querySelector('span:last-child').textContent = ready
           ? "A custom coffee is waiting — confirm when you're ready!"
-          : "What would you brew today?";
+          : 'What would you brew today?';
         confirmButton.disabled = !ready;
-        confirmButton.textContent = ready
-          ? 'Confirm and brew'
-          : 'Pick your coffee...';
+        confirmButton.textContent = ready ? 'Confirm and brew' : 'Pick your coffee...';
       }
 
       async function postJson(path, body, fallbackError) {
         const response = await fetch(path, {
           method: 'POST',
-          headers: {'Content-Type': 'application/json'},
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
         const data = await response.json();
@@ -386,7 +671,7 @@
         try {
           const data = await postJson(
             '/api/chat',
-            {session_id: sessionId, message},
+            { session_id: sessionId, message },
             'The request failed.',
           );
           addMessage('Concierge', data.reply);
@@ -430,19 +715,48 @@
             'Confirmation failed.',
           );
           addMessage('Concierge', data.reply);
-          setDraftState({needs_confirmation: false});
+          setDraftState({ needs_confirmation: false });
         } catch (error) {
           addMessage('Concierge', `Sorry, ${error.message}`);
+        } finally {
           confirmButton.disabled = false;
           confirmButton.textContent = 'Confirm and brew';
         }
       });
 
+      function openChat(prompt) {
+        chatPanel.hidden = false;
+        chatPanel.classList.remove('closed');
+        chatPanel.classList.add('open');
+        chatLauncher.setAttribute('aria-expanded', 'true');
+        if (prompt) sendMessage(prompt);
+      }
+
+      function closeChat() {
+        chatPanel.classList.add('closed');
+        chatPanel.hidden = true;
+        chatLauncher.setAttribute('aria-expanded', 'false');
+      }
+
+      chatLauncher.addEventListener('click', () => {
+        if (chatPanel.hidden) openChat();
+        else closeChat();
+      });
+
+      const OPEN_CHAT_PROMPTS = {
+        order: "I would like to order ahead. What can I get started on?",
+        menu: "What do you have on the menu today?",
+      };
+
+      document.querySelectorAll('[data-open-chat]').forEach((button) => {
+        button.addEventListener('click', () => {
+          openChat(OPEN_CHAT_PROMPTS[button.dataset.openChat]);
+        });
+      });
+
       addMessage(
         'Concierge',
-        'Hi! Pick a complete coffee on the right, describe your own, or ' +
-          'ask me what is available. Your coffee will appear here before you ' +
-          'confirm.',
+        'Hi! Pick a complete coffee, describe your own, or ask me what is available. Your coffee will appear here before you confirm.',
       );
     </script>
   </body>
