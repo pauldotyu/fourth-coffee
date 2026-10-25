@@ -109,7 +109,7 @@ def _azure_otlp_endpoints() -> dict[str, str]:
             or parsed.password is not None
             or parsed.query
             or parsed.fragment
-            or not parsed.path.startswith("/datacollectionRules/")
+            or not parsed.path.lower().startswith("/datacollectionrules/")
             or "/streams/" not in parsed.path
             or not parsed.path.endswith(f"/otlp/v1/{signal.lower()}")
         ):

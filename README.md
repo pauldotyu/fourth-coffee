@@ -113,36 +113,160 @@ See the [chart README](deploy/helm/fourth-coffee/README.md#local-kind-networking
 
 ### Azure (AKS)
 
-[aks-for-agents-with-hcp-tf-stacks](https://github.com/pauldotyu/aks-for-agents-with-hcp-tf-stacks) is an example Terraform setup. It provisions the cluster, Application Insights, workload identities, and federated credentials.
+These Azure CLI commands create just enough Azure infrastructure to run the sample:
 
-1. Fill in `deploy/helm/values-azure.yaml` using your Terraform outputs. See [Azure Monitor settings](#azure-monitor-settings) below.
-2. Build and push an image to your registry.
-3. Connect and install:
+- A single-node AKS cluster with the OIDC issuer and workload identity enabled
+- An Azure Container Registry, with the image built in the cloud (no local Docker needed)
+- A Microsoft Foundry resource and project with `gpt-oss-120b`, a fast open-weight model that supports `json_schema` output
+- Application Insights with native OTLP ingestion, so pods export straight to Azure Monitor without a collector
+- Two managed identities: one for the agents (model and telemetry), one telemetry-only identity for the MCP service
+
+You need the [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli), `kubectl` (`az aks install-cli`), and [Helm](https://helm.sh/docs/intro/install/). The commands use bash syntax, so run them from macOS, Linux, WSL, or [Azure Cloud Shell](https://shell.azure.com). The first `az monitor app-insights` command may prompt to install its CLI extension. In PowerShell, write variables as `$RG = "rg-fourth-coffee"` and replace the trailing `\` with a backtick.
+
+**1. Set names.** `SUFFIX` makes the registry and Foundry names globally unique. Use only lowercase letters and numbers.
 
 ```bash
-az aks get-credentials --resource-group <rg> --name <aks>
+az login
+SUFFIX=<your-unique-suffix>
+RG=rg-fourth-coffee
+LOCATION=eastus2
+ACR=acrfc$SUFFIX
+FOUNDRY=foundry-fc-$SUFFIX
+
+az group create -n $RG -l $LOCATION
+```
+
+**2. Build the image and create the cluster.**
+
+```bash
+az acr create -g $RG -n $ACR --sku Basic
+az acr build -r $ACR -t fourth-coffee:0.1.0 .
+
+az aks create -g $RG -n aks-fourth-coffee \
+  --node-count 1 \
+  --enable-oidc-issuer \
+  --enable-workload-identity \
+  --attach-acr $ACR \
+  --generate-ssh-keys
+```
+
+**3. Create the Foundry project and model.**
+
+```bash
+az cognitiveservices account create -g $RG -n $FOUNDRY -l $LOCATION \
+  --kind AIServices --sku S0 --custom-domain $FOUNDRY \
+  --allow-project-management --yes
+
+az cognitiveservices account project create -g $RG -n $FOUNDRY \
+  --project-name fourth-coffee -l $LOCATION
+
+az cognitiveservices account deployment create -g $RG -n $FOUNDRY \
+  --deployment-name gpt-oss-120b \
+  --model-name gpt-oss-120b --model-version 1 --model-format OpenAI-OSS \
+  --sku-name GlobalStandard --sku-capacity 50
+```
+
+**4. Create Application Insights with native OTLP.** Linking an Azure Monitor workspace through the `2025-01-23-preview` API is the CLI equivalent of the portal's **OTLP support: On**. Azure creates a managed data collection rule (DCR) and the OTLP endpoints.
+
+```bash
+az monitor log-analytics workspace create -g $RG -n log-fourth-coffee -l $LOCATION
+az monitor account create -g $RG -n amw-fourth-coffee -l $LOCATION
+az monitor app-insights component create -g $RG -a appi-fourth-coffee -l $LOCATION \
+  --workspace log-fourth-coffee
+
+AMW_ID=$(az monitor account show -g $RG -n amw-fourth-coffee --query id -o tsv)
+az resource update -g $RG -n appi-fourth-coffee \
+  --resource-type Microsoft.Insights/components --api-version 2025-01-23-preview \
+  --set properties.AzureMonitorWorkspaceResourceId=$AMW_ID \
+        properties.AzureMonitorWorkspaceIngestionMode=Enabled
+```
+
+**5. Create the workload identities.** The chart uses the `demo` ServiceAccount for the concierge and ops-agent and `fourth-coffee-mcp-telemetry` for the MCP service. Each identity trusts one of them.
+
+```bash
+OIDC_ISSUER=$(az aks show -g $RG -n aks-fourth-coffee --query oidcIssuerProfile.issuerUrl -o tsv)
+
+az identity create -g $RG -n id-fourth-coffee
+az identity federated-credential create -g $RG --identity-name id-fourth-coffee \
+  -n demo --issuer $OIDC_ISSUER \
+  --subject system:serviceaccount:demo:demo --audiences api://AzureADTokenExchange
+
+az identity create -g $RG -n id-fourth-coffee-telemetry
+az identity federated-credential create -g $RG --identity-name id-fourth-coffee-telemetry \
+  -n fourth-coffee-mcp-telemetry --issuer $OIDC_ISSUER \
+  --subject system:serviceaccount:demo:fourth-coffee-mcp-telemetry --audiences api://AzureADTokenExchange
+```
+
+**6. Grant access.** The agent identity can call the model and publish telemetry. The MCP identity can only publish telemetry.
+
+```bash
+APP_PRINCIPAL=$(az identity show -g $RG -n id-fourth-coffee --query principalId -o tsv)
+TELEMETRY_PRINCIPAL=$(az identity show -g $RG -n id-fourth-coffee-telemetry --query principalId -o tsv)
+FOUNDRY_ID=$(az cognitiveservices account show -g $RG -n $FOUNDRY --query id -o tsv)
+DCR_ID=$(az resource show -g $RG -n appi-fourth-coffee \
+  --resource-type Microsoft.Insights/components --api-version 2025-01-23-preview \
+  --query properties.DataCollectionRuleResourceId -o tsv)
+
+az role assignment create --assignee-object-id $APP_PRINCIPAL --assignee-principal-type ServicePrincipal \
+  --role "Cognitive Services OpenAI User" --scope $FOUNDRY_ID
+az role assignment create --assignee-object-id $APP_PRINCIPAL --assignee-principal-type ServicePrincipal \
+  --role "Monitoring Metrics Publisher" --scope $DCR_ID
+az role assignment create --assignee-object-id $TELEMETRY_PRINCIPAL --assignee-principal-type ServicePrincipal \
+  --role "Monitoring Metrics Publisher" --scope $DCR_ID
+```
+
+**7. Deploy.** `values-azure.yaml` turns on workload identity and native OTLP. The `--set` flags fill in your resource values.
+
+```bash
+APP_CLIENT_ID=$(az identity show -g $RG -n id-fourth-coffee --query clientId -o tsv)
+TELEMETRY_CLIENT_ID=$(az identity show -g $RG -n id-fourth-coffee-telemetry --query clientId -o tsv)
+TRACES_ENDPOINT=$(az resource show -g $RG -n appi-fourth-coffee --resource-type Microsoft.Insights/components --api-version 2025-01-23-preview --query properties.OTLPTracesEndpoint -o tsv)
+LOGS_ENDPOINT=$(az resource show -g $RG -n appi-fourth-coffee --resource-type Microsoft.Insights/components --api-version 2025-01-23-preview --query properties.OTLPLogsEndpoint -o tsv)
+METRICS_ENDPOINT=$(az resource show -g $RG -n appi-fourth-coffee --resource-type Microsoft.Insights/components --api-version 2025-01-23-preview --query properties.OTLPMetricsEndpoint -o tsv)
+INSTRUMENTATION_KEY=$(az resource show -g $RG -n appi-fourth-coffee --resource-type Microsoft.Insights/components --api-version 2025-01-23-preview --query properties.InstrumentationKey -o tsv)
+
+az aks get-credentials -g $RG -n aks-fourth-coffee
 
 helm upgrade --install fourth-coffee deploy/helm/fourth-coffee \
   --namespace demo --create-namespace \
   --values deploy/helm/values-azure.yaml \
-  --set-string image.tag=<your-image-tag>
+  --set-string image.registry=$ACR.azurecr.io \
+  --set-string image.tag=0.1.0 \
+  --set-string workloadIdentity.clientId=$APP_CLIENT_ID \
+  --set-string workloadIdentity.serviceAccounts.fourth-coffee-mcp.clientId=$TELEMETRY_CLIENT_ID \
+  --set-string config.OPENAI_BASE_URL=https://$FOUNDRY.services.ai.azure.com/openai/v1/ \
+  --set-string config.OPENAI_CHAT_MODEL=gpt-oss-120b \
+  --set-string config.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=$TRACES_ENDPOINT \
+  --set-string config.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=$LOGS_ENDPOINT \
+  --set-string config.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=$METRICS_ENDPOINT \
+  --set-string config.OTEL_RESOURCE_ATTRIBUTES=microsoft.applicationId=$INSTRUMENTATION_KEY \
+  --wait
+
+kubectl -n demo get service concierge
+```
+
+Open `http://<EXTERNAL-IP>` from the concierge service. Role assignments can take a few minutes to propagate. If the first chat fails with a 401 or 403, wait and try again.
+
+**Clean up.** Delete everything when you're done:
+
+```bash
+az group delete -n $RG --yes --no-wait
 ```
 
 #### Azure Monitor settings
 
 The Azure profile sends traces, metrics, and logs straight to Azure Monitor's native OTLP endpoints. It does not need AKS application monitoring, an `Instrumentation` resource, or a collector pod.
 
-In `values-azure.yaml`:
+The steps above supply the values `values-azure.yaml` leaves blank on purpose, so it never guesses a destination:
 
-- Replace the example client IDs and model settings.
-- Set the three `OTEL_EXPORTER_OTLP_*_ENDPOINT` values to the full HTTPS URLs from the Application Insights **OTLP Connection Info**.
-- Set `OTEL_RESOURCE_ATTRIBUTES` to `microsoft.applicationId=<InstrumentationKey GUID>`. This is routing metadata, not a credential.
+- The three `OTEL_EXPORTER_OTLP_*_ENDPOINT` values are the full HTTPS URLs from the Application Insights **OTLP Connection Info**.
+- `OTEL_RESOURCE_ATTRIBUTES` is `microsoft.applicationId=<InstrumentationKey GUID>`. This is routing metadata, not a credential.
 
-The profile ships with these values blank on purpose, so it never guesses a destination. It already sets HTTP/protobuf, delta metrics, and exponential histograms.
+The profile already sets HTTP/protobuf, delta metrics, and exponential histograms.
 
 With `OTEL_EXPORTER_OTLP_AUTH_MODE=workload_identity`, each pod uses its workload identity to get tokens for `https://monitor.azure.com/.default`, and Azure Identity refreshes them automatically. Use `default_credential` instead for a local process with existing Azure credentials, such as an Azure CLI login. Missing or invalid settings fail at startup. Authentication or export errors never fall back to classic ingestion.
 
-The platform owns the Azure identities and role assignments; Helm only creates ServiceAccounts and annotations. Grant **Monitoring Metrics Publisher** on the application's DCR to every exporting identity. The MCP service gets its own telemetry-only identity (`fourth-coffee-mcp-telemetry`), so it can appear in traces without getting model access.
+The platform owns the Azure identities and role assignments; Helm only creates ServiceAccounts and annotations. Every exporting identity needs **Monitoring Metrics Publisher** on the application's DCR. The MCP service gets its own telemetry-only identity (`fourth-coffee-mcp-telemetry`), so it can appear in traces without getting model access.
 
 To use the local collector or classic Application Insights exporter instead, set `OTEL_EXPORTER_OTLP_AUTH_MODE=none` and clear the native cloud endpoint values. In that mode, a traces endpoint takes priority over `APPLICATIONINSIGHTS_CONNECTION_STRING`. An Azure Monitor cloud URL without an authenticated mode is rejected.
 
@@ -156,7 +280,7 @@ Never print tokens while debugging. See [Azure Monitor native OTLP ingestion](ht
 
 ## AKS scaling demo
 
-The story: run locally, deploy to AKS, then use AKS desktop to find and fix a capacity bottleneck in the BrewOps agent. Provision the cluster, registry access, model access, and developer permissions before presenting.
+The story: run locally, deploy to AKS, then use AKS desktop to find and fix a capacity bottleneck in the BrewOps agent. Before presenting, complete the [Azure (AKS)](#azure-aks) steps and give presenters access to the cluster.
 
 If you plan to generate the Dockerfile and Helm chart live with AKS dev tools, use a separate starter checkout without them. Keep this repo's versions as the known-good fallback.
 
@@ -165,10 +289,9 @@ If you plan to generate the Dockerfile and Helm chart live with AKS dev tools, u
 `ops-agent` can simulate finite per-pod capacity. With the settings below, each pod handles two requests at a time and each takes one second. Requests still travel the real concierge → A2A → MCP path, so this shows agent-service queueing, not model speed.
 
 ```bash
-helm upgrade --install fourth-coffee deploy/helm/fourth-coffee \
-  --namespace demo --create-namespace \
-  --values deploy/helm/values-azure.yaml \
-  --set-string image.tag=<your-image-tag> \
+helm upgrade fourth-coffee deploy/helm/fourth-coffee \
+  --namespace demo \
+  --reuse-values \
   --set-string config.OPS_DEMO_WORK_SECONDS=1 \
   --set-string config.OPS_DEMO_CONCURRENCY=2 \
   --set components.opsAgent.replicas=1 \
@@ -211,7 +334,7 @@ kubectl -n demo set env deployment/concierge OPENAI_BASE_URL- OPENAI_CHAT_MODEL-
 kubectl -n demo scale deployment/ops-agent --replicas=1
 ```
 
-To turn off the simulation, redeploy with `config.OPS_DEMO_WORK_SECONDS="0"`. A Helm upgrade also resets replica counts to the chart values.
+To turn off the simulation, rerun the step 1 command with `config.OPS_DEMO_WORK_SECONDS=0`. A Helm upgrade also resets replica counts to the chart values.
 
 ### Why only ops-agent scales
 

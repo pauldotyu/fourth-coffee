@@ -189,6 +189,17 @@ def test_native_authenticates_every_signal(
         assert credential.close_count == 1
 
 
+def test_native_accepts_endpoint_casing_returned_by_azure(
+    monkeypatch, native_environment, credentials, transport
+):
+    endpoint = ENDPOINTS["TRACES"].replace("datacollectionRules", "dataCollectionRules")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", endpoint)
+    with configured_exporters() as exporters:
+        assert all(result.name == "SUCCESS" for result in export_all(exporters))
+    requests, _, _ = transport
+    assert requests[0].url == endpoint
+
+
 def test_native_renews_near_expiry_token(transport):
     credential = FakeCredential()
     credential.tokens = [
