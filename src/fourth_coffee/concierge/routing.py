@@ -3,6 +3,7 @@
 from typing import Any
 
 from fourth_coffee.catalog import (
+    DEFAULT_SIZE,
     routing_hints,
     size_routing_hints,
 )
@@ -215,7 +216,7 @@ def special_order_plan(result: dict[str, Any]) -> RoutingPlan:
     )
     return RoutingPlan(
         route="quote",
-        size="DOUBLE",
+        size=DEFAULT_SIZE,
         flavors=[str(flavor["name"]) for flavor in flavors],
         sauce=str(sauce["name"]),
         toppings=[str(item["name"]) for item in toppings],

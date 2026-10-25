@@ -5,7 +5,6 @@ IMAGE_TAG ?= $(PROJECT_VERSION)
 # -- Development -------------------------------------------------------------------
 
 .PHONY: sync lint format-check typecheck test check build up down \
-	azure-deploy \
 	kind-create kind-delete
 
 sync:
@@ -41,11 +40,6 @@ up:
 down:
 	docker compose down
 
-# -- Azure -------------------------------------------------------------------------
-
-azure-deploy:
-	$(UV) run python scripts/azure_deploy.py
-
 # -- Kubernetes on Kind ------------------------------------------------------------
 
 IMAGE := fourth-coffee:$(IMAGE_TAG)
@@ -56,7 +50,7 @@ kind-create: build
 	docker compose up -d otel-collector loki tempo prometheus grafana
 	kind create cluster --name fourth-coffee --config deploy/kind-config.yaml 2>&1 || true
 	kubectl config use-context kind-fourth-coffee
-	kind load docker-image $(IMAGE) --name fourth-cooffee
+	kind load docker-image $(IMAGE) --name fourth-coffee
 	helm upgrade --install fourth-coffee deploy/helm/fourth-coffee \
 		--namespace demo --create-namespace \
 		--values deploy/helm/values-local.yaml \

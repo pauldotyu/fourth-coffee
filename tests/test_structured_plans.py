@@ -207,7 +207,7 @@ async def test_model_endpoint_errors_do_not_silently_fall_back() -> None:
         (
             "quote_order",
             {
-                "size": "CLASSIC",
+                "size": "DOUBLE",
                 "flavors": ["vanilla"],
                 "sauce": None,
                 "toppings": [],

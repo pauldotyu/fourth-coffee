@@ -1,6 +1,6 @@
 # Fourth Coffee
 
-Fourth Coffee is a compact MCP and A2A demo. A browser concierge builds coffee quotes, an operations agent checks fulfillment, and a deterministic MCP service owns catalog, inventory, drafts, and submissions.
+Fourth Coffee is a small MCP and A2A demo for distributed agent tracing. A browser concierge builds coffee orders, an operations agent checks inventory and fulfillment, and a deterministic MCP service owns the catalog, inventory, drafts, and submissions.
 
 ## Architecture
 
@@ -8,229 +8,161 @@ Fourth Coffee is a compact MCP and A2A demo. A browser concierge builds coffee q
 flowchart TD
     Browser --> Concierge
     Concierge -->|menu, quote, confirm| MCP[Fourth Coffee MCP]
-    Concierge -->|A2A operations| Ops[Concierge]
+    Concierge -->|A2A operations| Ops[CoffeeOps agent]
     Ops -->|grounded tools| MCP
     Concierge -. telemetry .-> Observe[OTel or Azure Monitor]
     Ops -. telemetry .-> Observe
     MCP -. telemetry .-> Observe
 ```
 
-All three services are installed from the `fourth_coffee` Python package and run from one container image. `SERVICE` selects `fourth-coffee-mcp`, `ops-agent`, or `concierge` at runtime.
+All three services come from one Python package and one container image. The `SERVICE` environment variable selects which one runs.
 
-| Service      | Port | Responsibility                                       |
-| ------------ | ---: | ---------------------------------------------------- |
+| Service             | Port | Responsibility                                       |
+| ------------------- | ---: | ---------------------------------------------------- |
 | `fourth-coffee-mcp` | 8101 | Menu, availability, quotes, and order submission     |
-| `ops-agent`  | 8202 | Tool-grounded inventory and fulfillment decisions    |
-| `concierge`  | 8301 | Browser, sessions, routing, drafts, and confirmation |
+| `ops-agent`         | 8202 | Tool-grounded inventory and fulfillment decisions    |
+| `concierge`         | 8301 | Browser, sessions, routing, drafts, and confirmation |
 
-The MCP service exposes `list_menu`, `check_availability`, `quote_order`, and `submit_order`. Only the concierge confirmation action submits a draft.
+### How an order works
 
-Routing and operations planning use Chat Completions JSON-schema output, validated
-with Pydantic. Invalid output gets one retry with validation feedback. The router
-then logs and falls back to deterministic routing; an invalid Concierge plan fails
-explicitly without executing a tool. Models must support `response_format` with
-`json_schema`. Model endpoint failures are reported, not silently treated as valid
-plans.
+1. The concierge routes each message to menu, quote, operations, surprise, or general.
+2. A quote creates a draft through the MCP `quote_order` tool. Quoting never reserves inventory.
+3. The concierge asks the CoffeeOps agent to verify the draft can be made now.
+4. Only the **Confirm** button calls `submit_order`. Chat messages never submit orders.
 
-Specials are a routing intent, not a keyword override ahead of the model. With the
-concierge model disabled, or after both validation attempts fail, the fallback
-router still recognizes the demo prompts. Concierge executes only its validated
-menu, availability, or quote plan; submission is not in its model-facing schema.
+Drink sizes are **Single**, **Double**, and **Triple**, named for the number of espresso shots. Double is the default.
 
-"Surprise me" reuses the specials recipe: a Double with the highest-stock coffee,
-milk, and two available add-ons. When only one drink is left, it
-combines two drinks rather than promising two of one. It fetches live
-inventory, quotes through MCP, and asks Concierge to verify fulfillment. The recipe
-may repeat until stock changes, and quoting still does not reserve inventory.
+### Models
+
+Both agents use an OpenAI-compatible Chat Completions endpoint, and the model must support `response_format` with `json_schema`. Plans are validated with Pydantic. Invalid output gets one retry with the validation errors; endpoint failures are reported, never treated as valid plans.
+
+- **Concierge:** the model routes messages and writes replies. Without a model, or after two invalid plans, a deterministic router handles the demo prompts.
+- **CoffeeOps:** the model turns free-form operations questions into an MCP tool plan. Specials and fulfillment checks from the concierge use structured requests and never call the model, so the agent still serves them when no model is configured.
+
+### Specials and "surprise me"
+
+Both use the same recipe from live inventory: a Double with the highest-stock coffee, milk, and two add-ons. If the top coffee has only one serving left, it uses the top two coffees instead.
+
+- **Specials** recommend the drink only.
+- **Surprise me** also quotes it and verifies fulfillment, so it is ready to confirm.
+
+The recipe repeats until stock changes.
 
 ## Local quick start
 
-Requirements:
-
-- Docker Engine with Docker Compose
-- Ollama on the host
+You need Docker or Podman with Compose and [Ollama](https://ollama.com/) running on the host.
 
 ```bash
 cp .env.example .env
 ollama pull qwen3:8b
-docker compose up -d --build --wait
+make up
 ```
 
-Open [http://localhost:8301](http://localhost:8301).
-
-> [!note]
-> The Linux host mapping for `host.docker.internal` is included in Compose.
-
-Useful prompts:
+Open [http://localhost:8301](http://localhost:8301) and try:
 
 - `Show me the menu.`
 - `Build me a double the daily with oat milk and chocolate shavings.`
 - `Got any coffee specials tonight?`
 - `Surprise me.`
 
-Stop the stack:
-
-```bash
-docker compose down
-```
+Grafana is at [http://localhost:3000](http://localhost:3000) (admin/admin) with Tempo, Prometheus, and Loki already connected. Stop everything with `make down`.
 
 ## Development
 
-Python 3.12 and [uv](https://docs.astral.sh/uv/) are required.
+You need Python 3.12 and [uv](https://docs.astral.sh/uv/).
 
-```bash
-uv sync --dev
-make check
-```
+| Command       | What it does                                                |
+| ------------- | ----------------------------------------------------------- |
+| `make sync`   | Install the locked development environment                  |
+| `make check`  | Run ruff, format check, pyright, and pytest without changes |
+| `make format` | Apply formatting                                            |
+| `make build`  | Build the shared container image                            |
 
-> [!note]
-> `make check` validates without modifying files. Formatting is explicit:
-
-```bash
-make format
-```
-
-Build the shared image:
-
-```bash
-make build
-```
-
-The image version defaults to the project version in `pyproject.toml`. `APP_VERSION` is the only runtime version override.
+The image tag defaults to the version in `pyproject.toml`. Set `APP_VERSION` to override the version a running service reports.
 
 ## Kubernetes
 
-Helm is used to package the app for Kubernetes.
+The Helm chart deploys the same image three times. Validate it with:
 
 ```bash
 helm lint deploy/helm/fourth-coffee
 helm template fourth-coffee deploy/helm/fourth-coffee --namespace demo
 ```
 
-Local Kind:
-
-> [!note]
-> The `compose.yaml` runs the observability stack in containers and publishes it on the host. Kind workloads export telemetry to the OpenTelemetry Collector through the Docker host, and Grafana is available at [http://localhost:3000](http://localhost:3000).
+### Local Kind
 
 ```bash
-make kind-create
-make kind-delete
+make kind-create   # build, create the cluster, and install the chart
+make kind-delete   # uninstall and stop the observability stack
 ```
 
-## Local networking
+`make kind-create` starts the observability stack with Compose, creates a single-node Kind cluster, loads the image, and installs the chart with `deploy/helm/values-local.yaml`. The app is at [http://localhost:8301](http://localhost:8301).
 
-The `deploy/helm/values-local.yaml` sends model requests and telemetry to the Docker host at `172.17.0.1`.
-
-Find the Kind node's host gateway with:
+In this profile all three pods share the node network and call each other over `127.0.0.1`. They reach Ollama and the OTel collector on the Docker host at `172.17.0.1`. If your Docker gateway differs, find it and pass it in:
 
 ```bash
 docker inspect fourth-coffee-control-plane \
   --format '{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}'
-```
 
-You can override the URLs if the reported address differs:
-
-```bash
 make kind-create \
-  OPENAI_BASE_URL=http://host-address:11434/v1 \
-  OTEL_EXPORTER_OTLP_ENDPOINT=http://host-address:4318
+  OPENAI_BASE_URL=http://<gateway>:11434/v1 \
+  OTEL_EXPORTER_OTLP_ENDPOINT=http://<gateway>:4318
 ```
 
-The three application pods share the Kind node network. They call each other through `127.0.0.1`, reach host services through the Docker bridge, and expose the concierge at [http://localhost:8301](http://localhost:8301).
+See the [chart README](deploy/helm/fourth-coffee/README.md#local-kind-networking) for the full network path.
 
-The `deploy/kind-config.yaml` creates the single control-plane node and maps its NodePort `30001` to host port `8301`. See the [chart README](deploy/helm/fourth-coffee/README.md#local-kind-networking) for the full network path.
+### Azure (AKS)
 
-## Azure deployment
+[aks-for-agents-with-hcp-tf-stacks](https://github.com/pauldotyu/aks-for-agents-with-hcp-tf-stacks) is an example Terraform setup. It provisions the cluster, Application Insights, workload identities, and federated credentials.
 
-For Azure, see the [aks-for-agents-with-hcp-tf-stacks](https://github.com/pauldotyu/aks-for-agents-with-hcp-tf-stacks) for an example of Terraform provisioning. Using the Terraform outputs, update the `deploy/helm/values-azure.yaml` to include your deployment values.
-
-Connect to the AKS cluster:
+1. Fill in `deploy/helm/values-azure.yaml` using your Terraform outputs. See [Azure Monitor settings](#azure-monitor-settings) below.
+2. Build and push an image to your registry.
+3. Connect and install:
 
 ```bash
 az aks get-credentials --resource-group <rg> --name <aks>
-```
 
-Publish an image containing the native-authentication changes and use its tag.
-The exporter-selection-only implementation is not sufficient for authenticated
-cloud OTLP. No compatible published replacement tag is assumed here.
-
-After completing the native OTLP configuration below, install the Helm chart:
-
-```bash
 helm upgrade --install fourth-coffee deploy/helm/fourth-coffee \
-  --namespace demo \
-  --create-namespace \
+  --namespace demo --create-namespace \
   --values deploy/helm/values-azure.yaml \
-  --set-string image.tag=<your-new-image-tag>
+  --set-string image.tag=<your-image-tag>
 ```
 
-### Native OTLP without AKS application monitoring
+#### Azure Monitor settings
 
-The Azure profile exports traces, metrics, and logs directly to Azure Monitor's
-native OTLP cloud endpoints. It does not require AKS `appMonitoring`, an
-`Instrumentation` resource, or a collector pod.
+The Azure profile sends traces, metrics, and logs straight to Azure Monitor's native OTLP endpoints. It does not need AKS application monitoring, an `Instrumentation` resource, or a collector pod.
 
-Before installing, replace the example client IDs and model settings in
-`deploy/helm/values-azure.yaml`. Supply the three complete HTTPS URLs from the
-Application Insights resource's **OTLP Connection Info**. Set
-`OTEL_RESOURCE_ATTRIBUTES` to `microsoft.applicationId=<InstrumentationKey GUID>`.
-This is routing metadata, not a bearer credential. The profile deliberately leaves
-these values incomplete rather than guessing a destination.
+In `values-azure.yaml`:
 
-`OTEL_EXPORTER_OTLP_AUTH_MODE=workload_identity` uses the pod's projected identity
-to obtain tokens for `https://monitor.azure.com/.default`. Azure Identity caches
-and refreshes those tokens before expiry for each signal's HTTP session.
-`default_credential` is also available for a process with an existing Azure
-credential, such as an authenticated local Azure CLI session. Native mode targets
-Azure public-cloud ingestion endpoints and requires HTTP/protobuf, delta metrics,
-and exponential histograms; the Azure profile already supplies those settings.
-Missing or invalid configuration fails explicitly. Authentication or ingestion
-errors never trigger a switch to classic ingestion.
+- Replace the example client IDs and model settings.
+- Set the three `OTEL_EXPORTER_OTLP_*_ENDPOINT` values to the full HTTPS URLs from the Application Insights **OTLP Connection Info**.
+- Set `OTEL_RESOURCE_ATTRIBUTES` to `microsoft.applicationId=<InstrumentationKey GUID>`. This is routing metadata, not a credential.
 
-The platform must provision the OTLP-enabled Application Insights resource,
-DCR/DCE, workload identities, and federated credentials. Grant **Monitoring
-Metrics Publisher on the application's DCR** to every exporting identity. The
-model identity retains its separate model-access grant. The Azure profile gives
-`fourth-coffee-mcp` its own `fourth-coffee-mcp-telemetry` ServiceAccount and identity,
-with only the telemetry grant. This preserves all three services in the
-distributed trace without giving the deterministic MCP backend model access.
-Helm creates ServiceAccounts and annotations, not Azure identities or IAM grants.
+The profile ships with these values blank on purpose, so it never guesses a destination. It already sets HTTP/protobuf, delta metrics, and exponential histograms.
 
-Leave `OTEL_EXPORTER_OTLP_AUTH_MODE=none` for the existing local collector or
-classic Application Insights exporter. In that mode, a per-signal traces endpoint
-still selects OTLP ahead of the connection string; otherwise a connection string
-selects the classic exporters. Clear native cloud endpoint variables when
-switching back. A native Azure cloud URL without an explicit authenticated mode
-is rejected, and a static bearer header is not a token-renewal strategy.
+With `OTEL_EXPORTER_OTLP_AUTH_MODE=workload_identity`, each pod uses its workload identity to get tokens for `https://monitor.azure.com/.default`, and Azure Identity refreshes them automatically. Use `default_credential` instead for a local process with existing Azure credentials, such as an Azure CLI login. Missing or invalid settings fail at startup. Authentication or export errors never fall back to classic ingestion.
 
-After deploying the newly built image, send a fresh chat and verify its correlated
-model call in `OTelSpans` in the destination Log Analytics workspace. Repeat after
-token renewal. A running pod is not proof that cloud ingestion succeeded. For
-export failures, inspect the relevant pod logs: 401 points to authentication, 403
-to the DCR publisher grant or its propagation, and 404 to an incorrect URL or
-stream. Never print tokens while diagnosing these failures.
+The platform owns the Azure identities and role assignments; Helm only creates ServiceAccounts and annotations. Grant **Monitoring Metrics Publisher** on the application's DCR to every exporting identity. The MCP service gets its own telemetry-only identity (`fourth-coffee-mcp-telemetry`), so it can appear in traces without getting model access.
 
-See [Azure Monitor native OTLP ingestion](https://learn.microsoft.com/azure/azure-monitor/containers/opentelemetry-protocol-ingestion)
-for the cloud resource and authorization contract.
+To use the local collector or classic Application Insights exporter instead, set `OTEL_EXPORTER_OTLP_AUTH_MODE=none` and clear the native cloud endpoint values. In that mode, a traces endpoint takes priority over `APPLICATIONINSIGHTS_CONNECTION_STRING`. An Azure Monitor cloud URL without an authenticated mode is rejected.
+
+**Verify ingestion.** A running pod does not prove that telemetry arrives. Send a chat, then find its trace and model call in `OTelSpans` in the Log Analytics workspace. Check again after the first token refresh. If export fails, check the pod logs:
+
+- **401**: authentication
+- **403**: the DCR publisher grant, or it hasn't propagated yet
+- **404**: wrong URL or stream
+
+Never print tokens while debugging. See [Azure Monitor native OTLP ingestion](https://learn.microsoft.com/azure/azure-monitor/containers/opentelemetry-protocol-ingestion) for details.
 
 ## AKS scaling demo
 
-Keep the story focused: run locally, prepare the container and deployment
-configuration with AKS dev tools, deploy, then use AKS desktop to inspect and scale
-Concierge. The Dockerfile and Helm chart are the known-good reference. For live
-configuration generation, prepare a separate starter checkout without those
-artifacts in advance; do not overwrite the working deployment during the demo.
-Provision the cluster, registry access, model access, and developer permissions
-before presenting.
+The story: run locally, deploy to AKS, then use AKS desktop to find and fix a capacity bottleneck in the CoffeeOps agent. Provision the cluster, registry access, model access, and developer permissions before presenting.
 
-### Enable a repeatable capacity problem
+If you plan to generate the Dockerfile and Helm chart live with AKS dev tools, use a separate starter checkout without them. Keep this repo's versions as the known-good fallback.
 
-Concierge has an opt-in simulation of finite per-pod capacity. With these settings,
-each pod processes two operations at a time, with one second of simulated work
-per operation. Requests still use the real concierge -> A2A -> MCP path.
-This demonstrates agent-service queueing, not faster LLM inference.
+### 1. Simulate limited capacity
 
-Deploy your built image using the configured Azure values:
+`ops-agent` can simulate finite per-pod capacity. With the settings below, each pod handles two requests at a time and each takes one second. Requests still travel the real concierge → A2A → MCP path, so this shows agent-service queueing, not model speed.
 
 ```bash
 helm upgrade --install fourth-coffee deploy/helm/fourth-coffee \
@@ -243,63 +175,47 @@ helm upgrade --install fourth-coffee deploy/helm/fourth-coffee \
   --wait
 ```
 
-For a local preview of queueing, set `OPS_DEMO_WORK_SECONDS=1` in `.env` and
-run `make up`. Zero (the default) disables both simulated work and the concurrency
-cap. Use normal pod networking on AKS for the scaling demonstration, not the
-single-node, host-network Kind profile.
+To preview locally, set `OPS_DEMO_WORK_SECONDS=1` in `.env` and run `make up`. `0` (the default) turns the simulation off. Use AKS for the real demo, not the single-node Kind profile.
 
-### Measure, inspect, scale, repeat
+### 2. Take model latency out of the measurement (optional)
 
-For a repeatable **capacity-only** measurement, disable model calls in the
-concierge before the run. This restarts that pod and clears its conversations;
-finish any interactive orders first. Concierge keeps its existing model settings,
-but the structured specials operation does not invoke its model.
+For repeatable numbers, turn off the concierge model so it uses the deterministic router. Specials then make no model calls at all. This restarts the concierge and clears its conversations, so finish any open orders first.
 
 ```bash
 kubectl -n demo set env deployment/concierge OPENAI_BASE_URL= OPENAI_CHAT_MODEL=
 kubectl -n demo rollout status deployment/concierge
 ```
 
-1. Open the app in the browser and ask `Got any specials today?`.
-2. In AKS desktop, open the app's namespace or import it as a Project. Inspect
-   the three workloads and the `ops-agent` pod logs.
-3. Run the bounded load below against the concierge URL. It starts independent
-   customer sessions asking for specials; it never quotes or submits orders.
-4. While load is running, inspect Concierge's `queue_wait_ms`, `processing_ms`,
-   `pod`, and `outcome` log fields. `trace_id` links to distributed traces when
-   tracing is enabled. Queued I/O work need not show high CPU.
-5. Scale **only `ops-agent` from 1 to 3** in AKS desktop. Wait for all three pods
-   to become ready, then rerun the identical command for a clean comparison.
-   Look for requests across all three pods, less queueing, and lower p95 latency.
+With the model on, the measured latency also includes routing inference.
 
-```bash
-uv run python scripts/load.py --url http://<concierge-address> \
-  --requests 120 --concurrency 12
-```
+### 3. Measure, scale, repeat
 
-The JSON report includes successful requests/second, p50/p95 latency in
-milliseconds, and failures. Percentiles cover successful requests only; any failed
-or malformed response makes the command exit nonzero. Compare runs with zero
-failures, the same request count/concurrency, and no rollout in progress.
-This is fixed-concurrency load, not a fixed arrival rate. With the concierge
-model disabled as above, the specials path skips model calls so a shared model
-endpoint cannot obscure the scaling result. With models enabled, specials use the
-model router too, so the measured latency also includes inference.
+1. Open the app and ask `Got any specials today?`.
+2. In AKS desktop, open the `demo` namespace (or import it as a Project) and look at the three workloads and the `ops-agent` logs.
+3. Run the load test against the concierge. Each request is a new session asking for specials; it never quotes or submits orders.
 
-After the capacity demo, remove the temporary overrides to restore model settings
-from the chart's ConfigMap:
+   ```bash
+   uv run python scripts/load.py --url http://<concierge-address> \
+     --requests 120 --concurrency 12
+   ```
+
+4. While it runs, watch the `ops-agent` logs for `queue_wait_ms`, `processing_ms`, `pod`, and `outcome`. Use `trace_id` to jump to the distributed trace. Queued work doesn't need high CPU to be slow.
+5. Scale **only `ops-agent`** from 1 to 3 replicas in AKS desktop. When all pods are ready, rerun the same command. Look for traffic across all three pods, less queueing, and lower p95 latency.
+
+The load script prints JSON with requests per second, p50/p95 latency (successful requests only), and failure count. Any failure makes it exit nonzero. For a fair comparison, use runs with zero failures, the same settings, and no rollout in progress. This is fixed-concurrency load, not a fixed arrival rate.
+
+### 4. Reset
 
 ```bash
 kubectl -n demo set env deployment/concierge OPENAI_BASE_URL- OPENAI_CHAT_MODEL-
-kubectl -n demo rollout status deployment/concierge
+kubectl -n demo scale deployment/ops-agent --replicas=1
 ```
 
-Keep concierge and MCP at **one replica**: their conversation, inventory, draft,
-and idempotency state is in memory. Concierge calls use fresh A2A tasks, and its
-client does not retain idle HTTP connections that could pin subsequent calls to
-one pod. This demo does not support cross-pod continuation of long-running tasks.
+To turn off the simulation, redeploy with `config.OPS_DEMO_WORK_SECONDS="0"`. A Helm upgrade also resets replica counts to the chart values.
 
-To reset, scale Concierge back to one replica. To disable simulation, set
-`config.OPS_DEMO_WORK_SECONDS` back to `"0"` and redeploy with the same image and
-Azure values. A Helm upgrade reapplies the replica count from its values.
-Use synthetic data and restricted demo access; this is not a production blueprint.
+### Why only ops-agent scales
+
+The concierge and MCP service keep conversations, inventory, drafts, and idempotency keys in memory, so keep them at **one replica**. `ops-agent` is stateless per request. The concierge starts a fresh A2A task for every call and doesn't reuse idle connections, so new requests spread across all `ops-agent` pods.
+
+> [!important]
+> This is a demo, not a production blueprint. Use synthetic data and restrict access. The concierge has no authentication.

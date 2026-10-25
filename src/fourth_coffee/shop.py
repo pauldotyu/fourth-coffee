@@ -11,6 +11,7 @@ from typing import Any
 from fourth_coffee.catalog import (
     ALIASES,
     CATALOGS,
+    DEFAULT_SIZE,
     FLAVORS,
     SAUCES,
     SIZES,
@@ -111,7 +112,7 @@ class InMemoryCoffeeShop:
         self,
         *,
         session_id: str,
-        size: str = "DOUBLE",
+        size: str = DEFAULT_SIZE,
         flavors: list[str] | None = None,
         sauce: str | None = None,
         toppings: list[str] | None = None,

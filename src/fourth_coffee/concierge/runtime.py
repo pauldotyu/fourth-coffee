@@ -9,6 +9,7 @@ from typing import Any
 from agent_framework import Agent, AgentResponse
 
 from fourth_coffee.agent_runtime import run_agent_attempts, run_structured
+from fourth_coffee.catalog import DEFAULT_SIZE
 from fourth_coffee.concierge.api import (
     ChatResponse,
     ConfirmResponse,
@@ -266,7 +267,7 @@ class ConciergeRuntime:
             "quote_order",
             {
                 "session_id": session_id,
-                "size": plan.size or "DOUBLE",
+                "size": plan.size or DEFAULT_SIZE,
                 "flavors": plan.flavors,
                 "sauce": plan.sauce,
                 "toppings": plan.toppings,

@@ -10,6 +10,7 @@ from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 
+from fourth_coffee.catalog import DEFAULT_SIZE
 from fourth_coffee.settings import AppSettings
 from fourth_coffee.shop import InMemoryCoffeeShop
 from fourth_coffee.telemetry import configure, create_metrics_app, instrument_asgi
@@ -55,7 +56,7 @@ def check_availability(
 @mcp.tool()
 def quote_order(
     session_id: str,
-    size: str = "CLASSIC",
+    size: str = DEFAULT_SIZE,
     flavors: list[str] | None = None,
     sauce: str | None = None,
     toppings: list[str] | None = None,

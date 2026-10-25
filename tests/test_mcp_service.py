@@ -28,9 +28,7 @@ async def test_mcp_tool_names_and_schemas_are_stable() -> None:
         "requested_ready_in_minutes",
     ]
     assert tools["quote_order"].inputSchema["required"] == ["session_id"]
-    assert (
-        tools["quote_order"].inputSchema["properties"]["size"]["default"] == "CLASSIC"
-    )
+    assert tools["quote_order"].inputSchema["properties"]["size"]["default"] == "DOUBLE"
     assert list(tools["submit_order"].inputSchema["properties"]) == [
         "draft_id",
         "session_id",

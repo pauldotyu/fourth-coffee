@@ -41,6 +41,9 @@ SIZES: Mapping[str, Size] = MappingProxyType(
     }
 )
 
+# Sizes are named for the number of espresso shots in the drink.
+DEFAULT_SIZE = "DOUBLE"
+
 FLAVORS: Mapping[str, Ingredient] = MappingProxyType(
     {
         "THE_DAILY": Ingredient("The Daily", stock=18),

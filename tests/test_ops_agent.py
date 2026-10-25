@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from a2a.server.tasks import TaskUpdater
@@ -145,7 +145,7 @@ async def test_demo_capacity_is_opt_in_and_logs_timing(
     logs = [
         record.message
         for record in caplog.records
-        if "operation=concierge" in record.message
+        if "operation=coffee_ops" in record.message
     ]
     assert len(logs) == 6
     assert all(
@@ -157,7 +157,7 @@ async def test_demo_capacity_is_opt_in_and_logs_timing(
     for span in spans:
         assert span.attributes is not None
         assert span.attributes["ops.demo_work_seconds"] == delay
-        assert span.attributes["gen_ai.agent.name"] == "Concierge"
+        assert span.attributes["gen_ai.agent.name"] == "CoffeeOps"
         processing_ms = span.attributes["ops.processing_ms"]
         queue_ms = span.attributes["ops.queue_wait_ms"]
         assert isinstance(processing_ms, float)
@@ -198,3 +198,27 @@ async def test_demo_capacity_releases_slot_after_failure(
 def test_mcp_error_is_not_returned_as_success() -> None:
     with pytest.raises(RuntimeError, match="MCP tool failed"):
         parse_coffee_result(CallToolResult(isError=True, content=[]))
+
+
+def test_ops_model_is_optional_and_auth_is_checked_only_when_enabled() -> None:
+    disabled = Settings(openai_base_url="", openai_chat_model="", openai_api_key="")
+    assert disabled.model_is_enabled is False
+    with pytest.raises(ValidationError):
+        Settings(
+            openai_base_url="http://model/v1",
+            openai_chat_model="model",
+            openai_api_key="",
+        )
+
+
+@pytest.mark.asyncio
+async def test_structured_requests_work_without_ops_model() -> None:
+    settings = Settings(openai_base_url="", openai_chat_model="")
+    executor = CoffeeOpsExecutor(None, MagicMock(spec=MCPStreamableHTTPTool), settings)
+    executor._tool_text = AsyncMock(return_value=['{"flavors":[]}'])  # type: ignore[method-assign]
+
+    assert await executor._run_structured_request(
+        'COFFEE_OPS_REQUEST {"operation":"inventory_special"}'
+    ) == ['{"flavors":[]}']
+    with pytest.raises(RuntimeError, match="Ops model is not configured"):
+        await executor._run_model_request("What is low on stock?")

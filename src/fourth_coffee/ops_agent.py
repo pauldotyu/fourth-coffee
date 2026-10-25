@@ -32,15 +32,17 @@ from agent_framework.a2a import A2AExecutor
 from agent_framework.exceptions import ToolException
 from mcp.types import CallToolResult
 from opentelemetry import trace
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 
 from fourth_coffee.agent_runtime import run_structured
+from fourth_coffee.catalog import DEFAULT_SIZE
 from fourth_coffee.model_client import (
     OpenAIAuthMode,
     create_openai_chat_client,
+    model_enabled,
     validate_openai_auth,
 )
 from fourth_coffee.protocol import result_text
@@ -61,6 +63,8 @@ class ConnectableMCPTool(Protocol):
     async def connect(self, *, reset: bool = False) -> None: ...
 
 
+OPS_AGENT_NAME = "CoffeeOps"
+
 OPS_INSTRUCTIONS = """
 Return one MCP tool plan for the customer's operations question.
 list_menu: menu choices, sizes, or prices.
@@ -76,7 +80,7 @@ class OperationsPlan(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     tool: Literal["list_menu", "check_availability", "quote_order"]
-    size: str = "CLASSIC"
+    size: str = DEFAULT_SIZE
     flavors: list[str] = Field(default_factory=list)
     sauce: str | None = None
     toppings: list[str] = Field(default_factory=list)
@@ -95,16 +99,14 @@ class Settings(AppSettings):
     ops_demo_work_seconds: float = Field(default=0, ge=0, le=10)
     ops_demo_concurrency: int = Field(default=2, ge=1, le=64)
 
-    @field_validator("openai_base_url", "openai_chat_model")
-    @classmethod
-    def require_model_setting(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("model configuration values must not be empty")
-        return value
+    @property
+    def model_is_enabled(self) -> bool:
+        return model_enabled(self.openai_base_url, self.openai_chat_model)
 
     @model_validator(mode="after")
     def require_model_auth(self) -> Self:
-        validate_openai_auth(self.openai_auth_mode, self.openai_api_key)
+        if self.model_is_enabled:
+            validate_openai_auth(self.openai_auth_mode, self.openai_api_key)
         return self
 
     @property
@@ -123,14 +125,21 @@ def parse_coffee_result(result: CallToolResult) -> str:
     return result_text(result, sort_keys=True)
 
 
+class StructuredOnlyAgent:
+    """Session provider for A2A when no ops model is configured."""
+
+    def create_session(self, *, session_id: str | None = None) -> AgentSession:
+        return AgentSession(session_id=session_id)
+
+
 class CoffeeOpsExecutor(A2AExecutor):
     def __init__(
         self,
-        agent: Agent,
+        agent: Agent | None,
         coffee_tools: MCPStreamableHTTPTool,
         settings: Settings,
     ) -> None:
-        super().__init__(agent)
+        super().__init__(agent or StructuredOnlyAgent())  # type: ignore[arg-type]
         self._ops_agent = agent
         self._coffee_tools = coffee_tools
         self._work_seconds = settings.ops_demo_work_seconds
@@ -182,22 +191,27 @@ class CoffeeOpsExecutor(A2AExecutor):
         try:
             request = json.loads(query.removeprefix("COFFEE_OPS_REQUEST "))
         except json.JSONDecodeError as error:
-            raise RuntimeError("Invalid structured Concierge request") from error
+            raise RuntimeError("Invalid structured operations request") from error
         if not isinstance(request, dict):
-            raise RuntimeError("Invalid structured Concierge request")
+            raise RuntimeError("Invalid structured operations request")
         operation = request.get("operation")
         arguments = request.get("arguments", {})
         if not isinstance(arguments, dict):
-            raise RuntimeError("Invalid structured Concierge arguments")
+            raise RuntimeError("Invalid structured operations arguments")
         handler = self._operations.get(str(operation))
         if handler is None:
-            raise RuntimeError(f"Unsupported Concierge operation: {operation}")
+            raise RuntimeError(f"Unsupported operations request: {operation}")
         return await handler(arguments)
 
     async def _run_model_request(self, query: Any) -> list[str]:
+        if self._ops_agent is None:
+            raise RuntimeError(
+                "Ops model is not configured; only structured operations requests "
+                "are supported"
+            )
         plan = await run_structured(self._ops_agent, str(query), OperationsPlan)
         if plan is None:
-            raise RuntimeError("Concierge did not return a valid operations plan")
+            raise RuntimeError("Ops agent did not return a valid operations plan")
         arguments = plan.model_dump(exclude={"tool"})
         if plan.tool == "list_menu":
             arguments = {}
@@ -216,7 +230,7 @@ class CoffeeOpsExecutor(A2AExecutor):
     ) -> None:
         with tracer.start_as_current_span("ops.request") as span:
             span.set_attribute("gen_ai.operation.name", "invoke_agent")
-            span.set_attribute("gen_ai.agent.name", "Concierge")
+            span.set_attribute("gen_ai.agent.name", OPS_AGENT_NAME)
             queued = time.perf_counter()
             started: float | None = None
             outcome = "error"
@@ -230,7 +244,7 @@ class CoffeeOpsExecutor(A2AExecutor):
                         results = await self._run_model_request(query)
                     if not results:
                         raise RuntimeError(
-                            "Concierge completed without a Coffee MCP result"
+                            "Ops agent completed without a Coffee MCP result"
                         )
                     await updater.update_status(
                         state=TaskState.TASK_STATE_WORKING,
@@ -252,7 +266,7 @@ class CoffeeOpsExecutor(A2AExecutor):
                 span.set_attribute("ops.demo_work_seconds", self._work_seconds)
                 logger.log(
                     logging.INFO if outcome == "ok" else logging.ERROR,
-                    "operation=concierge pod=%s trace_id=%032x "
+                    "operation=coffee_ops pod=%s trace_id=%032x "
                     "queue_wait_ms=%.1f processing_ms=%.1f outcome=%s",
                     self._pod,
                     span.get_span_context().trace_id,
@@ -279,7 +293,7 @@ def create_agent_card(settings: Settings | None = None) -> AgentCard:
         ],
     )
     return AgentCard(
-        name="Concierge",
+        name=OPS_AGENT_NAME,
         description="Model driven operations specialist grounded in Coffee MCP.",
         version=settings.app_version,
         default_input_modes=["text"],
@@ -307,7 +321,7 @@ def create_ops_agent(
     )
     return Agent(
         client=model_client,
-        name="Concierge",
+        name=OPS_AGENT_NAME,
         description="Coffee operations specialist",
         instructions=OPS_INSTRUCTIONS,
         default_options={
@@ -362,7 +376,7 @@ def create_app(settings: Settings | None = None) -> Any:
         header_provider=inject_trace_headers,
         http_client=coffee_http_client,
     )
-    agent = create_ops_agent(settings)
+    agent = create_ops_agent(settings) if settings.model_is_enabled else None
     agent_card = create_agent_card(settings)
     handler = DefaultRequestHandler(
         agent_executor=CoffeeOpsExecutor(agent, coffee_tools, settings),
@@ -375,6 +389,7 @@ def create_app(settings: Settings | None = None) -> Any:
             {
                 "status": "ok",
                 "version": settings.app_version,
+                "model_enabled": settings.model_is_enabled,
                 "model": settings.openai_chat_model,
                 "model_auth_mode": settings.openai_auth_mode.value,
             }

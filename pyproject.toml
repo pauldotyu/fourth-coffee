@@ -47,9 +47,6 @@ dev = [
   "ruff>=0.12,<1",
 ]
 
-[tool.uv]
-prerelease = "allow"
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", "."]
