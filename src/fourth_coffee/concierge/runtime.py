@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from agent_framework import Agent, AgentResponse
+from opentelemetry import trace
 
 from fourth_coffee.agent_runtime import run_agent_attempts, run_structured
 from fourth_coffee.catalog import DEFAULT_SIZE
@@ -45,6 +46,7 @@ from fourth_coffee.protocol import OpsAgentClient, call_mcp_tool, extract_json_o
 RouterCall = Callable[[str, dict[str, Any]], Awaitable[Any]]
 OpsCall = Callable[[str, str], Awaitable[str]]
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer("fourth-coffee.concierge")
 
 ROUTER_INSTRUCTIONS = """
 Return a routing plan for the current customer message using conversation context.
@@ -58,6 +60,15 @@ general: greetings, capabilities, complaints, or explanations of preparation tim
 Use operations_intent="availability" for non-operations routes.
 Never interpret a chat message as permission to submit an order.
 """.strip()
+
+# A plausible prompt edit that contradicts RoutingPlan validation for specials.
+# Replies stay correct through retry or fallback, so only traces reveal the cost.
+ROUTER_INSTRUCTIONS_V2 = ROUTER_INSTRUCTIONS.replace(
+    """For specials or inventory-based recommendations, use operations with
+operations_intent="specials".""",
+    """Specials and recommendations are friendly conversation, so use general with
+operations_intent="specials".""",
+)
 
 WRITER_INSTRUCTIONS = """
 Write one concise customer-facing reply using the latest message, the routing
@@ -150,7 +161,11 @@ class ConciergeRuntime:
         return Agent(
             client=model_client,
             name="ConciergeRouter",
-            instructions=ROUTER_INSTRUCTIONS,
+            instructions=(
+                ROUTER_INSTRUCTIONS_V2
+                if self.settings.concierge_router_prompt_version == "v2"
+                else ROUTER_INSTRUCTIONS
+            ),
             default_options={
                 "temperature": 0,
                 "max_tokens": 500,
@@ -158,17 +173,29 @@ class ConciergeRuntime:
         )
 
     async def plan_turn(self, message: str, context: str) -> RoutingPlan:
-        router = self._router
-        if router is None:
-            return heuristic_plan(message)
-        prompt = (
-            f"Conversation context:\n{context}\n\nCurrent customer message:\n{message}"
-        )
-        plan = await run_structured(router, prompt, RoutingPlan)
-        if plan is not None:
+        with tracer.start_as_current_span("concierge.route") as span:
+            router = self._router
+            if router is None:
+                span.set_attribute("concierge.router.outcome", "heuristic")
+                plan = heuristic_plan(message)
+            else:
+                prompt = (
+                    f"Conversation context:\n{context}\n\n"
+                    f"Current customer message:\n{message}"
+                )
+                model_plan = await run_structured(router, prompt, RoutingPlan)
+                if model_plan is not None:
+                    span.set_attribute("concierge.router.outcome", "model")
+                    plan = model_plan
+                else:
+                    logger.warning(
+                        "Router validation exhausted; using heuristic routing"
+                    )
+                    span.set_attribute("concierge.router.outcome", "fallback")
+                    plan = heuristic_plan(message)
+            span.set_attribute("concierge.route", plan.route)
+            span.set_attribute("concierge.operations_intent", plan.operations_intent)
             return plan
-        logger.warning("Router validation exhausted; using heuristic routing")
-        return heuristic_plan(message)
 
     async def write_reply(
         self,

@@ -20,6 +20,8 @@ class Settings(AppSettings):
     openai_auth_mode: OpenAIAuthMode = OpenAIAuthMode.API_KEY
     openai_api_key: str | None = None
     agent_http_timeout_seconds: float = 60
+    # v2 is the trace demo fault: a router prompt that contradicts RoutingPlan.
+    concierge_router_prompt_version: Literal["v1", "v2"] = "v1"
 
     @property
     def normalized_fourth_coffee_mcp_url(self) -> str:

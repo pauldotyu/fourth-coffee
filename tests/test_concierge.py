@@ -1,8 +1,11 @@
 import json
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import pytest
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from fourth_coffee.concierge import (
     INDEX_HTML,
@@ -12,6 +15,7 @@ from fourth_coffee.concierge import (
     display_order_number,
     heuristic_plan,
 )
+from fourth_coffee.concierge import runtime as concierge_runtime
 from fourth_coffee.shop import InMemoryCoffeeShop
 
 
@@ -520,3 +524,79 @@ async def test_model_writer_retries_empty_response_then_uses_fallback() -> None:
     assert len(writer.prompts) == 2
     assert "previous response was empty" in writer.prompts[1]
     await runtime.close()
+
+
+def route_span_exporter(monkeypatch: pytest.MonkeyPatch) -> InMemorySpanExporter:
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    monkeypatch.setattr(concierge_runtime, "tracer", provider.get_tracer("test"))
+    return exporter
+
+
+@pytest.mark.asyncio
+async def test_route_span_records_validation_failures_and_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exporter = route_span_exporter(monkeypatch)
+    runtime = ConciergeRuntime(Settings(openai_base_url="", openai_chat_model=""))
+    invalid = '{"route":"general","operations_intent":"specials"}'
+    runtime._router = cast(
+        Any,
+        FakeAgent([SimpleNamespace(text=invalid), SimpleNamespace(text=invalid)]),
+    )
+
+    plan = await runtime.plan_turn("Got any specials today?", "No prior conversation.")
+
+    assert plan.route == "operations"
+    assert plan.operations_intent == "specials"
+    (span,) = exporter.get_finished_spans()
+    assert span.name == "concierge.route"
+    assert span.attributes is not None
+    assert span.attributes["concierge.router.outcome"] == "fallback"
+    assert span.attributes["concierge.route"] == "operations"
+    assert [event.name for event in span.events] == [
+        "structured_output.validation_failed"
+    ] * 2
+    attributes = [dict(event.attributes or {}) for event in span.events]
+    assert [item["attempt"] for item in attributes] == [1, 2]
+    assert "specials requires route=operations" in str(attributes[0]["error.message"])
+    await runtime.close()
+
+
+@pytest.mark.asyncio
+async def test_route_span_records_model_outcome(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exporter = route_span_exporter(monkeypatch)
+    runtime = ConciergeRuntime(Settings(openai_base_url="", openai_chat_model=""))
+    runtime._router = cast(Any, FakeAgent([SimpleNamespace(text='{"route":"menu"}')]))
+
+    await runtime.plan_turn("show me the menu", "No prior conversation.")
+
+    (span,) = exporter.get_finished_spans()
+    assert span.attributes is not None
+    assert span.attributes["concierge.router.outcome"] == "model"
+    assert span.events == ()
+    await runtime.close()
+
+
+@pytest.mark.parametrize("version", ["v1", "v2"])
+def test_router_prompt_v2_is_opt_in(version: Literal["v1", "v2"]) -> None:
+    regression = version == "v2"
+    runtime = ConciergeRuntime(
+        Settings(
+            openai_base_url="http://model.invalid/v1",
+            openai_chat_model="demo",
+            openai_api_key="test",
+            concierge_router_prompt_version=version,
+        ),
+        mcp_call=None,
+        ops_call=None,
+    )
+    assert runtime._router is not None
+    instructions = runtime._router.default_options["instructions"]
+    assert ("use general with" in instructions) is regression
+    assert ('use operations with\noperations_intent="specials"' in instructions) is (
+        not regression
+    )

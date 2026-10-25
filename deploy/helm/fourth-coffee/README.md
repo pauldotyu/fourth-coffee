@@ -50,10 +50,12 @@ Use `secret.existingSecret` with `secret.create: false` to supply an existing
 Secret. Non-secret runtime values belong under `config`; API keys and connection
 strings belong under `secret.data`.
 
-The optional scaling demo uses `config.OPS_DEMO_WORK_SECONDS` (default `"0"`,
-disabled) and `config.OPS_DEMO_CONCURRENCY` (default `"2"`). Scale only
+The trace demo sets `config.CONCIERGE_ROUTER_PROMPT_VERSION` to `v2`
+(default `"v1"`) to ship a regressed router prompt. See the
+[trace walkthrough](../../../README.md#aks-trace-demo-a-silent-agent-regression).
+The optional capacity simulation uses `config.OPS_DEMO_WORK_SECONDS` (default
+`"0"`, disabled) and `config.OPS_DEMO_CONCURRENCY` (default `"2"`). Scale only
 `components.opsAgent.replicas`; concierge and MCP retain process-local state.
-See the [scaling walkthrough](../../../README.md#aks-scaling-demo).
 
 For AKS, set `workloadIdentity.enabled`, `workloadIdentity.clientId`, and the
 shared service account values. The Azure profile opts into authenticated native

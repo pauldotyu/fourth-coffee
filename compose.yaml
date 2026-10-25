@@ -66,6 +66,7 @@ services:
       <<: [*app-environment, *model-environment]
       FOURTH_COFFEE_MCP_URL: http://fourth-coffee-mcp:8101/mcp/
       OPS_AGENT_URL: http://ops-agent:8202
+      CONCIERGE_ROUTER_PROMPT_VERSION: ${CONCIERGE_ROUTER_PROMPT_VERSION:-v1}
       SERVICE: concierge
       PORT: 8301
 

@@ -278,67 +278,84 @@ To use the local collector or classic Application Insights exporter instead, set
 
 Never print tokens while debugging. See [Azure Monitor native OTLP ingestion](https://learn.microsoft.com/azure/azure-monitor/containers/opentelemetry-protocol-ingestion) for details.
 
-## AKS scaling demo
+## AKS trace demo: a silent agent regression
 
-The story: run locally, deploy to AKS, then use AKS desktop to find and fix a capacity bottleneck in the BrewOps agent. Before presenting, complete the [Azure (AKS)](#azure-aks) steps and give presenters access to the cluster.
+The story: a prompt change ships, every health check stays green, and customers still get sensible answers. The only sign that the concierge got slower and more expensive is in its traces.
 
-If you plan to generate the Dockerfile and Helm chart live with AKS dev tools, use a separate starter checkout without them. Keep this repo's versions as the known-good fallback.
+This fault is real, not simulated. During the AKS setup run, `gpt-oss-120b` occasionally broke the routing schema for specials, even with the normal prompt. The concierge retried and then fell back to the deterministic router, so the reply was still correct. The flag below makes that failure reliable enough to present.
 
-### 1. Simulate limited capacity
+Complete the [Azure (AKS)](#azure-aks) steps first.
 
-`ops-agent` can simulate finite per-pod capacity. With the settings below, each pod handles two requests at a time and each takes one second. Requests still travel the real concierge → A2A → MCP path, so this shows agent-service queueing, not model speed.
+### 1. Capture a baseline
+
+Open the app and ask `Got any specials today?` and `Show me the menu.` a few times. In Application Insights, open **Search** (or **Transaction search**), pick a recent `concierge.chat` request, and open the end-to-end transaction. A healthy turn has:
+
+- One `concierge.route` span with `concierge.router.outcome = model` and no events
+- One model call (an HTTP `POST` to `/openai/v1/chat/completions`) under it
+- For specials: the A2A call to `ops-agent`, then its MCP inventory call
+
+### 2. Ship the regression
+
+`CONCIERGE_ROUTER_PROMPT_VERSION=v2` swaps in a router prompt with one plausible edit: it treats specials as friendly conversation and sends them to `general`. That contradicts the `RoutingPlan` schema, which requires specials to use `route=operations`.
 
 ```bash
 helm upgrade fourth-coffee deploy/helm/fourth-coffee \
   --namespace demo \
   --reuse-values \
-  --set-string config.OPS_DEMO_WORK_SECONDS=1 \
-  --set-string config.OPS_DEMO_CONCURRENCY=2 \
-  --set components.opsAgent.replicas=1 \
+  --set-string config.CONCIERGE_ROUTER_PROMPT_VERSION=v2 \
   --wait
 ```
 
-To preview locally, set `OPS_DEMO_WORK_SECONDS=1` in `.env` and run `make up`. `0` (the default) turns the simulation off. Use AKS for the real demo, not the single-node Kind profile.
+To preview locally, set `CONCIERGE_ROUTER_PROMPT_VERSION=v2` in `.env` and run `make up`. Traces are in Grafana's Tempo view.
 
-### 2. Take model latency out of the measurement (optional)
+### 3. Notice that nothing looks wrong
 
-For repeatable numbers, turn off the concierge model so it uses the deterministic router. Specials then make no model calls at all. This restarts the concierge and clears its conversations, so finish any open orders first.
+Ask the same questions. The specials answer and the menu still look right. Pods are healthy, there are no HTTP errors, and AKS desktop shows nothing unusual. A dashboard might show latency creeping up, but nothing explains why.
 
-```bash
-kubectl -n demo set env deployment/concierge OPENAI_BASE_URL= OPENAI_CHAT_MODEL=
-kubectl -n demo rollout status deployment/concierge
+### 4. Find it in the trace
+
+Open the same kind of transaction again. Now the `concierge.route` span shows:
+
+- One or two `structured_output.validation_failed` events with `error.message = specials requires route=operations`
+- Two or three model calls instead of one
+- Often `concierge.router.outcome = fallback`, meaning the model's routing was discarded and the heuristic router answered
+
+In a sample run against `gpt-oss-120b`, every request hit at least one validation failure, and half of them exhausted both attempts and fell back. That included menu questions, so the regression spread beyond specials.
+
+To quantify it across all traffic, run this in the Log Analytics workspace:
+
+```kusto
+OTelSpans
+| where TimeGenerated > ago(30m)
+| where Name == "concierge.route"
+| summarize turns = count(), p95_ms = percentile(DurationMs, 95)
+    by outcome = tostring(Attributes["concierge.router.outcome"]), bin(TimeGenerated, 5m)
+| order by TimeGenerated asc
 ```
 
-With the model on, the measured latency also includes routing inference.
+The `fallback` count and the p95 for `concierge.route` both jump at the moment of the upgrade.
 
-### 3. Measure, scale, repeat
+The concierge logs also include a `Router validation exhausted` warning, but only the trace ties it to a specific customer turn, shows the wasted model calls, and shows which answers came from the fallback instead of the model.
 
-1. Open the app and ask `Got any specials today?`.
-2. In AKS desktop, open the `demo` namespace (or import it as a Project) and look at the three workloads and the `ops-agent` logs.
-3. Run the load test against the concierge. Each request is a new session asking for specials; it never quotes or submits orders.
+### 5. Fix and verify
 
-   ```bash
-   uv run python scripts/load.py --url http://<concierge-address> \
-     --requests 120 --concurrency 12
-   ```
-
-4. While it runs, watch the `ops-agent` logs for `queue_wait_ms`, `processing_ms`, `pod`, and `outcome`. Use `trace_id` to jump to the distributed trace. Queued work doesn't need high CPU to be slow.
-5. Scale **only `ops-agent`** from 1 to 3 replicas in AKS desktop. When all pods are ready, rerun the same command. Look for traffic across all three pods, less queueing, and lower p95 latency.
-
-The load script prints JSON with requests per second, p50/p95 latency (successful requests only), and failure count. Any failure makes it exit nonzero. For a fair comparison, use runs with zero failures, the same settings, and no rollout in progress. This is fixed-concurrency load, not a fixed arrival rate.
-
-### 4. Reset
+Roll back the prompt and check that traces return to one model call per turn with `outcome = model`:
 
 ```bash
-kubectl -n demo set env deployment/concierge OPENAI_BASE_URL- OPENAI_CHAT_MODEL-
-kubectl -n demo scale deployment/ops-agent --replicas=1
+helm upgrade fourth-coffee deploy/helm/fourth-coffee \
+  --namespace demo \
+  --reuse-values \
+  --set-string config.CONCIERGE_ROUTER_PROMPT_VERSION=v1 \
+  --wait
 ```
 
-To turn off the simulation, rerun the step 1 command with `config.OPS_DEMO_WORK_SECONDS=0`. A Helm upgrade also resets replica counts to the chart values.
+### Why this fault
 
-### Why only ops-agent scales
+Agent regressions rarely look like outages. Schema retries and safe fallbacks keep the experience working, which is the right design, but it also hides the cost: extra tokens, extra latency, and answers that no longer come from the model you think is serving them. The `concierge.route` span records the outcome and each validation failure, so you can see that cost per turn and across all traffic.
 
-The concierge and MCP service keep conversations, inventory, drafts, and idempotency keys in memory, so keep them at **one replica**. `ops-agent` is stateless per request. The concierge starts a fresh A2A task for every call and doesn't reuse idle connections, so new requests spread across all `ops-agent` pods.
+### Optional: capacity simulation
+
+`ops-agent` can still simulate finite per-pod capacity with `config.OPS_DEMO_WORK_SECONDS` and `config.OPS_DEMO_CONCURRENCY` (default `0`, off). `scripts/load.py` drives fixed-concurrency specials traffic against the concierge. Only `ops-agent` can scale out, because the concierge and MCP service keep conversations, inventory, drafts, and idempotency keys in memory.
 
 > [!important]
 > This is a demo, not a production blueprint. Use synthetic data and restrict access. The concierge has no authentication.

@@ -5,6 +5,7 @@ from collections.abc import Awaitable, Callable, Sequence
 
 from agent_framework import Agent, AgentResponse
 from agent_framework.exceptions import ChatClientException
+from opentelemetry import trace
 from pydantic import BaseModel, ValidationError
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,17 @@ async def run_structured[PlanT: BaseModel](
             return schema.model_validate_json(response.text)
         except ValidationError as error:
             detail = error.json(include_input=False, include_url=False)
+            trace.get_current_span().add_event(
+                "structured_output.validation_failed",
+                {
+                    "schema": schema.__name__,
+                    "attempt": attempt + 1,
+                    "error.count": error.error_count(),
+                    "error.message": "; ".join(
+                        str(item["msg"]) for item in error.errors()
+                    ),
+                },
+            )
             logger.warning(
                 "%s validation failed on attempt %s/2: %s",
                 schema.__name__,
