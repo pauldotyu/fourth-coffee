@@ -8,7 +8,7 @@ Fourth Coffee is a small MCP and A2A demo for distributed agent tracing. A brows
 flowchart TD
     Browser --> Concierge
     Concierge -->|menu, quote, confirm| MCP[Fourth Coffee MCP]
-    Concierge -->|A2A operations| Ops[CoffeeOps agent]
+    Concierge -->|A2A operations| Ops[BrewOps agent]
     Ops -->|grounded tools| MCP
     Concierge -. telemetry .-> Observe[OTel or Azure Monitor]
     Ops -. telemetry .-> Observe
@@ -27,7 +27,7 @@ All three services come from one Python package and one container image. The `SE
 
 1. The concierge routes each message to menu, quote, operations, surprise, or general.
 2. A quote creates a draft through the MCP `quote_order` tool. Quoting never reserves inventory.
-3. The concierge asks the CoffeeOps agent to verify the draft can be made now.
+3. The concierge asks the BrewOps agent to verify the draft can be made now.
 4. Only the **Confirm** button calls `submit_order`. Chat messages never submit orders.
 
 Drink sizes are **Single**, **Double**, and **Triple**, named for the number of espresso shots. Double is the default.
@@ -37,7 +37,7 @@ Drink sizes are **Single**, **Double**, and **Triple**, named for the number of 
 Both agents use an OpenAI-compatible Chat Completions endpoint, and the model must support `response_format` with `json_schema`. Plans are validated with Pydantic. Invalid output gets one retry with the validation errors; endpoint failures are reported, never treated as valid plans.
 
 - **Concierge:** the model routes messages and writes replies. Without a model, or after two invalid plans, a deterministic router handles the demo prompts.
-- **CoffeeOps:** the model turns free-form operations questions into an MCP tool plan. Specials and fulfillment checks from the concierge use structured requests and never call the model, so the agent still serves them when no model is configured.
+- **BrewOps:** the model turns free-form operations questions into an MCP tool plan. Specials and fulfillment checks from the concierge use structured requests and never call the model, so the agent still serves them when no model is configured.
 
 ### Specials and "surprise me"
 
@@ -156,7 +156,7 @@ Never print tokens while debugging. See [Azure Monitor native OTLP ingestion](ht
 
 ## AKS scaling demo
 
-The story: run locally, deploy to AKS, then use AKS desktop to find and fix a capacity bottleneck in the CoffeeOps agent. Provision the cluster, registry access, model access, and developer permissions before presenting.
+The story: run locally, deploy to AKS, then use AKS desktop to find and fix a capacity bottleneck in the BrewOps agent. Provision the cluster, registry access, model access, and developer permissions before presenting.
 
 If you plan to generate the Dockerfile and Helm chart live with AKS dev tools, use a separate starter checkout without them. Keep this repo's versions as the known-good fallback.
 

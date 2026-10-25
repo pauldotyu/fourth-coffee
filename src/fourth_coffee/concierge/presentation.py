@@ -65,7 +65,7 @@ def display_order_number(order_id: Any) -> str:
 
 
 def ops_request(operation: str, **arguments: Any) -> str:
-    return "COFFEE_OPS_REQUEST " + compact_json(
+    return "BREW_OPS_REQUEST " + compact_json(
         {"operation": operation, "arguments": arguments}
     )
 

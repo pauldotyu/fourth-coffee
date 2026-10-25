@@ -63,7 +63,7 @@ class ConnectableMCPTool(Protocol):
     async def connect(self, *, reset: bool = False) -> None: ...
 
 
-OPS_AGENT_NAME = "CoffeeOps"
+OPS_AGENT_NAME = "BrewOps"
 
 OPS_INSTRUCTIONS = """
 Return one MCP tool plan for the customer's operations question.
@@ -132,7 +132,7 @@ class StructuredOnlyAgent:
         return AgentSession(session_id=session_id)
 
 
-class CoffeeOpsExecutor(A2AExecutor):
+class BrewOpsExecutor(A2AExecutor):
     def __init__(
         self,
         agent: Agent | None,
@@ -186,10 +186,10 @@ class CoffeeOpsExecutor(A2AExecutor):
         )
 
     async def _run_structured_request(self, query: Any) -> list[str] | None:
-        if not isinstance(query, str) or not query.startswith("COFFEE_OPS_REQUEST "):
+        if not isinstance(query, str) or not query.startswith("BREW_OPS_REQUEST "):
             return None
         try:
-            request = json.loads(query.removeprefix("COFFEE_OPS_REQUEST "))
+            request = json.loads(query.removeprefix("BREW_OPS_REQUEST "))
         except json.JSONDecodeError as error:
             raise RuntimeError("Invalid structured operations request") from error
         if not isinstance(request, dict):
@@ -266,7 +266,7 @@ class CoffeeOpsExecutor(A2AExecutor):
                 span.set_attribute("ops.demo_work_seconds", self._work_seconds)
                 logger.log(
                     logging.INFO if outcome == "ok" else logging.ERROR,
-                    "operation=coffee_ops pod=%s trace_id=%032x "
+                    "operation=brew_ops pod=%s trace_id=%032x "
                     "queue_wait_ms=%.1f processing_ms=%.1f outcome=%s",
                     self._pod,
                     span.get_span_context().trace_id,
@@ -379,7 +379,7 @@ def create_app(settings: Settings | None = None) -> Any:
     agent = create_ops_agent(settings) if settings.model_is_enabled else None
     agent_card = create_agent_card(settings)
     handler = DefaultRequestHandler(
-        agent_executor=CoffeeOpsExecutor(agent, coffee_tools, settings),
+        agent_executor=BrewOpsExecutor(agent, coffee_tools, settings),
         task_store=InMemoryTaskStore(),
         agent_card=agent_card,
     )

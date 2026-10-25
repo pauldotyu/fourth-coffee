@@ -13,7 +13,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from pydantic import ValidationError
 
 from fourth_coffee.ops_agent import (
-    CoffeeOpsExecutor,
+    BrewOpsExecutor,
     Settings,
     connect_mcp_with_retry,
     parse_coffee_result,
@@ -108,7 +108,7 @@ async def test_demo_capacity_is_opt_in_and_logs_timing(
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     monkeypatch.setattr("fourth_coffee.ops_agent.tracer", provider.get_tracer("test"))
-    executor = CoffeeOpsExecutor(
+    executor = BrewOpsExecutor(
         MagicMock(spec=Agent),
         MagicMock(spec=MCPStreamableHTTPTool),
         ops_settings(ops_demo_work_seconds=delay, ops_demo_concurrency=2),
@@ -145,7 +145,7 @@ async def test_demo_capacity_is_opt_in_and_logs_timing(
     logs = [
         record.message
         for record in caplog.records
-        if "operation=coffee_ops" in record.message
+        if "operation=brew_ops" in record.message
     ]
     assert len(logs) == 6
     assert all(
@@ -157,7 +157,7 @@ async def test_demo_capacity_is_opt_in_and_logs_timing(
     for span in spans:
         assert span.attributes is not None
         assert span.attributes["ops.demo_work_seconds"] == delay
-        assert span.attributes["gen_ai.agent.name"] == "CoffeeOps"
+        assert span.attributes["gen_ai.agent.name"] == "BrewOps"
         processing_ms = span.attributes["ops.processing_ms"]
         queue_ms = span.attributes["ops.queue_wait_ms"]
         assert isinstance(processing_ms, float)
@@ -172,7 +172,7 @@ async def test_demo_capacity_is_opt_in_and_logs_timing(
 async def test_demo_capacity_releases_slot_after_failure(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    executor = CoffeeOpsExecutor(
+    executor = BrewOpsExecutor(
         MagicMock(spec=Agent),
         MagicMock(spec=MCPStreamableHTTPTool),
         ops_settings(ops_demo_work_seconds=0.001, ops_demo_concurrency=1),
@@ -214,11 +214,11 @@ def test_ops_model_is_optional_and_auth_is_checked_only_when_enabled() -> None:
 @pytest.mark.asyncio
 async def test_structured_requests_work_without_ops_model() -> None:
     settings = Settings(openai_base_url="", openai_chat_model="")
-    executor = CoffeeOpsExecutor(None, MagicMock(spec=MCPStreamableHTTPTool), settings)
+    executor = BrewOpsExecutor(None, MagicMock(spec=MCPStreamableHTTPTool), settings)
     executor._tool_text = AsyncMock(return_value=['{"flavors":[]}'])  # type: ignore[method-assign]
 
     assert await executor._run_structured_request(
-        'COFFEE_OPS_REQUEST {"operation":"inventory_special"}'
+        'BREW_OPS_REQUEST {"operation":"inventory_special"}'
     ) == ['{"flavors":[]}']
     with pytest.raises(RuntimeError, match="Ops model is not configured"):
         await executor._run_model_request("What is low on stock?")

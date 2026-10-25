@@ -28,7 +28,7 @@ async def test_surprise_uses_live_stock_and_only_confirmation_consumes_it() -> N
         return getattr(shop, name)(**arguments)
 
     async def ops_call(session_id: str, question: str) -> str:
-        request = json.loads(question.removeprefix("COFFEE_OPS_REQUEST "))
+        request = json.loads(question.removeprefix("BREW_OPS_REQUEST "))
         ops_calls.append(request["operation"])
         return json.dumps(shop.check_availability(**request["arguments"]))
 

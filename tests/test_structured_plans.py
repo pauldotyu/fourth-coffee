@@ -17,7 +17,7 @@ from openai import AsyncOpenAI
 from fourth_coffee.agent_runtime import run_structured
 from fourth_coffee.concierge import ConciergeRuntime, RoutingPlan, Settings
 from fourth_coffee.model_client import OpenAIAuthMode, create_openai_chat_client
-from fourth_coffee.ops_agent import CoffeeOpsExecutor, OperationsPlan, create_ops_agent
+from fourth_coffee.ops_agent import BrewOpsExecutor, OperationsPlan, create_ops_agent
 from fourth_coffee.ops_agent import Settings as OpsSettings
 from fourth_coffee.shop import InMemoryCoffeeShop
 
@@ -230,7 +230,7 @@ async def test_ops_executes_only_the_validated_tool_plan(
     )
     tools = MagicMock(spec=MCPStreamableHTTPTool)
     tools.call_tool = AsyncMock(return_value='{"authoritative":true}')
-    executor = CoffeeOpsExecutor(agent, tools, ops_settings())
+    executor = BrewOpsExecutor(agent, tools, ops_settings())
 
     result = await executor._run_model_request("Check this order")
 
@@ -243,7 +243,7 @@ async def test_ops_never_executes_an_invalid_or_submit_plan() -> None:
     agent = MagicMock(spec=Agent)
     agent.run = AsyncMock(return_value=response('{"tool":"submit_order"}'))
     tools = MagicMock(spec=MCPStreamableHTTPTool)
-    executor = CoffeeOpsExecutor(agent, tools, ops_settings())
+    executor = BrewOpsExecutor(agent, tools, ops_settings())
 
     with pytest.raises(RuntimeError, match="valid operations plan"):
         await executor._run_model_request("Submit the order")

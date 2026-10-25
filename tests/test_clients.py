@@ -119,7 +119,7 @@ async def test_concurrent_ops_calls_use_independent_tasks_across_replicas(
         transport=httpx.MockTransport(send),
         event_hooks={"request": [client._inject_trace_headers]},
     )
-    question = 'COFFEE_OPS_REQUEST {"operation":"inventory_special"}'
+    question = 'BREW_OPS_REQUEST {"operation":"inventory_special"}'
     try:
         # Repeated customer IDs must not link to task state on an earlier pod.
         replies = await asyncio.gather(
@@ -128,7 +128,7 @@ async def test_concurrent_ops_calls_use_independent_tasks_across_replicas(
         await client.ask("same-customer", question)
         with pytest.raises(RuntimeError, match="failed to complete"):
             await client.ask(
-                "same-customer", 'COFFEE_OPS_REQUEST {"operation":"invalid"}'
+                "same-customer", 'BREW_OPS_REQUEST {"operation":"invalid"}'
             )
     finally:
         await client.close()
