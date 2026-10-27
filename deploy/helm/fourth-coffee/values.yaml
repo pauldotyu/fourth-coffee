@@ -33,6 +33,10 @@ secret:
     APPLICATIONINSIGHTS_CONNECTION_STRING: ""
     OPENAI_API_KEY: ""
 
+# Additional ConfigMap or Secret sources loaded after app-config and the secret, so they take precedence.
+# Agent environments set this to [{configMapRef: {name: platform-context}}] to supply model and telemetry settings.
+extraEnvFrom: []
+
 workloadIdentity:
   enabled: false
   clientId: ""

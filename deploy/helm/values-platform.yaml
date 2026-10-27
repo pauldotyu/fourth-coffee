@@ -1,0 +1,19 @@
+extraEnvFrom:
+  - configMapRef:
+      name: platform-context
+secret:
+  create: false
+workloadIdentity:
+  enabled: true
+  serviceAccount:
+    create: false
+  serviceAccounts:
+    concierge:
+      name: concierge
+      create: false
+    ops-agent:
+      name: ops-agent
+      create: false
+    fourth-coffee-mcp:
+      name: fourth-coffee-mcp-telemetry
+      create: false

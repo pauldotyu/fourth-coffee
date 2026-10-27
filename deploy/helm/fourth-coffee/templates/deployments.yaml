@@ -57,8 +57,13 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ $root.Values.configMap.name }}
+            {{- if or $root.Values.secret.create $root.Values.secret.existingSecret }}
             - secretRef:
                 name: {{ include "fourth-coffee.secretName" $root }}
+            {{- end }}
+            {{- with $root.Values.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           env:
             - name: SERVICE
               value: {{ $component.name }}

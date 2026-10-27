@@ -212,3 +212,22 @@ def test_component_identities_do_not_create_an_unused_shared_account() -> None:
             f"serviceAccountName: {component}-identity"
             in documents[("Deployment", component)]
         )
+
+
+def test_platform_context_overrides_chart_defaults_without_a_secret() -> None:
+    overrides = {
+        "extraEnvFrom[0].configMapRef.name": "platform-context",
+        "secret.create": "false",
+        "workloadIdentity.enabled": "true",
+    }
+    for component in ("concierge", "ops-agent", "fourth-coffee-mcp"):
+        overrides[f"workloadIdentity.serviceAccounts.{component}.name"] = component
+        overrides[f"workloadIdentity.serviceAccounts.{component}.create"] = "false"
+    documents = rendered_documents(None, overrides)
+    assert ("Secret", "app-secrets") not in documents
+    for component in ("concierge", "ops-agent", "fourth-coffee-mcp"):
+        deployment = documents[("Deployment", component)]
+        assert "secretRef" not in deployment
+        assert deployment.index("name: app-config") < deployment.index(
+            "name: platform-context"
+        )
