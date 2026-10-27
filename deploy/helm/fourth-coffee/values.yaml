@@ -38,7 +38,7 @@ secret:
 extraEnvFrom: []
 
 workloadIdentity:
-  enabled: false
+  enabled: true
   clientId: ""
   serviceAccount:
     create: true
