@@ -38,7 +38,7 @@ secret:
 extraEnvFrom: []
 
 workloadIdentity:
-  enabled: true
+  enabled: false
   clientId: ""
   serviceAccount:
     create: true
@@ -56,7 +56,7 @@ components:
       type: ClusterIP
       port: 8101
     startupFailureThreshold: 12
-    workloadIdentity: false
+    workloadIdentity: true
     hostNetwork: false
     resources:
       requests:
