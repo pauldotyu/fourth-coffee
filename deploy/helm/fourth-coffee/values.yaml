@@ -89,7 +89,7 @@ components:
     replicas: 1
     port: 8301
     service:
-      type: LoadBalancer
+      type: ClusterIP
       port: 80
     startupFailureThreshold: 18
     workloadIdentity: true
