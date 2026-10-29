@@ -31,6 +31,7 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/path: /metrics
         prometheus.io/port: {{ $component.port | quote }}
+        checksum/config: {{ include (print $root.Template.BasePath "/configmap.yaml") $root | sha256sum }}
     spec:
       {{- if and $root.Values.workloadIdentity.enabled $component.workloadIdentity }}
       serviceAccountName: {{ include "fourth-coffee.componentServiceAccountName" (dict "root" $root "component" $component) }}
