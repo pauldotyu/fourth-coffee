@@ -120,7 +120,7 @@ def test_helm_workload_contract(values: str | None, image: str) -> None:
     config = documents[("ConfigMap", "app-config")]
     assert 'OPS_DEMO_WORK_SECONDS: "0"' in config
     assert 'OPS_DEMO_CONCURRENCY: "2"' in config
-    assert 'CONCIERGE_ROUTER_PROMPT_VERSION: "v1"' in config
+    assert 'CONCIERGE_ROUTER_PROMPT_VERSION: "v2"' in config
     expected = {
         "fourth-coffee-mcp": (8101, "cpu: 100m", "memory: 128Mi"),
         "ops-agent": (8202, "cpu: 200m", "memory: 256Mi"),
