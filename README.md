@@ -280,78 +280,71 @@ Never print tokens while debugging. See [Azure Monitor native OTLP ingestion](ht
 
 ## AKS trace demo: a silent agent regression
 
-The story: a prompt change ships, every health check stays green, and customers still get sensible answers. The only sign that the concierge got slower and more expensive is in its traces.
+The story: a small prompt change ships through the normal PR and GitOps path. Every health check stays green and customers still get correct answers, but every specials turn now makes an extra model call and takes longer. AKS desktop rules out the platform and its AI assistant finds the first clue in the logs. Application Insights traces show the cost and confirm the cause.
 
-This fault is real, not simulated. During the AKS setup run, `gpt-oss-120b` occasionally broke the routing schema for specials, even with the normal prompt. The concierge retried and then fell back to the deterministic router, so the reply was still correct. The flag below makes that failure reliable enough to present.
+This fault is real, not simulated. `CONCIERGE_ROUTER_PROMPT_VERSION=v2` swaps in a router prompt with one plausible edit: it treats specials as friendly conversation and sends them to `general`. That contradicts the `RoutingPlan` schema, which requires specials to use `route=operations`. The concierge retries with the validation error, so the reply stays correct and only the cost changes.
 
-Complete the [Azure (AKS)](#azure-aks) steps first.
+How the fault shows up depends on the model:
 
-### 1. Capture a baseline
+| Model          | Specials turn with v2                                                                                                  |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `gpt-5.4-mini` | The first attempt fails validation and the retry succeeds: two model calls, about one second slower, `outcome = model` |
+| `gpt-oss-120b` | Often fails both attempts and falls back to the heuristic router: up to three model calls, `outcome = fallback`        |
 
-Open the app and ask `Got any specials today?` and `Show me the menu.` a few times. In Application Insights, open **Search** (or **Transaction search**), pick a recent `concierge.chat` request, and open the end-to-end transaction. A healthy turn has:
+Menu questions are not affected on `gpt-5.4-mini`.
 
-- One `concierge.route` span with `concierge.router.outcome = model` and no events
-- One model call (an HTTP `POST` to `/openai/v1/chat/completions`) under it
-- For specials: the A2A call to `ops-agent`, then its MCP inventory call
+Complete the [Azure (AKS)](#azure-aks) steps first. When deployed through Argo CD, change the prompt version in Git, not with `helm upgrade`, or Argo CD reverts it.
 
-### 2. Ship the regression
+### 1. Send steady specials traffic
 
-`CONCIERGE_ROUTER_PROMPT_VERSION=v2` swaps in a router prompt with one plausible edit: it treats specials as friendly conversation and sends them to `general`. That contradicts the `RoutingPlan` schema, which requires specials to use `route=operations`.
+The scorecard needs a few minutes of data on each side of every change:
 
 ```bash
-helm upgrade fourth-coffee deploy/helm/fourth-coffee \
-  --namespace demo \
-  --reuse-values \
-  --set-string config.CONCIERGE_ROUTER_PROMPT_VERSION=v2 \
-  --wait
+while true; do
+  curl -s -o /dev/null -X POST "https://<app-host>/api/chat" \
+    -H 'content-type: application/json' \
+    -d "{\"session_id\":\"demo-$RANDOM\",\"message\":\"Got any coffee specials today?\"}"
+  sleep 5
+done
 ```
+
+### 2. Capture a baseline
+
+Run [`deploy/queries/specials-scorecard.kql`](deploy/queries/specials-scorecard.kql) in the Log Analytics workspace. It counts model calls under the concierge router for each specials turn, in 2-minute bins over the last 30 minutes. A healthy baseline has `calls_per_turn = 1.0`. Add `| render timechart` to chart `calls_per_turn` and `p95_ms`.
+
+In Application Insights, open a recent `concierge.chat` request in the end-to-end transaction view. A healthy specials turn has one `concierge.route` span, one `invoke_agent ConciergeRouter` span, and one `chat <model>` span under it, followed by the A2A call to `ops-agent` and its `tools/call check_availability` MCP span.
+
+### 3. Ship the regression
+
+Open a pull request that changes `config.CONCIERGE_ROUTER_PROMPT_VERSION` from `"v1"` to `"v2"` in `deploy/helm/fourth-coffee/values.yaml` and merge it. Argo CD rolls out the concierge.
 
 To preview locally, set `CONCIERGE_ROUTER_PROMPT_VERSION=v2` in `.env` and run `make up`. Traces are in Grafana's Tempo view.
 
-### 3. Notice that nothing looks wrong
+### 4. Notice that nothing looks wrong
 
-Ask the same questions. The specials answer and the menu still look right. Pods are healthy, there are no HTTP errors, and AKS desktop shows nothing unusual. A dashboard might show latency creeping up, but nothing explains why.
+Specials and menu answers still look right. Pods are Ready, nothing restarts, CPU and memory are flat, and there are no HTTP errors. Scaling `ops-agent` does not change anything.
 
-### 4. Find it in the trace
+### 5. Find the first clue with AKS desktop
 
-Open the same kind of transaction again. Now the `concierge.route` span shows:
+Open the namespace in AKS desktop and ask the AI assistant, for example: "Customers say specials are slow. Is anything wrong with this workload?" The concierge logs a warning on every specials turn, which the assistant can surface:
 
-- One or two `structured_output.validation_failed` events with `error.message = specials requires route=operations`
-- Two or three model calls instead of one
-- Often `concierge.router.outcome = fallback`, meaning the model's routing was discarded and the heuristic router answered
-
-In a sample run against `gpt-oss-120b`, every request hit at least one validation failure, and half of them exhausted both attempts and fell back. That included menu questions, so the regression spread beyond specials.
-
-To quantify it across all traffic, run this in the Log Analytics workspace:
-
-```kusto
-OTelSpans
-| where TimeGenerated > ago(30m)
-| where Name == "concierge.route"
-| summarize turns = count(), p95_ms = percentile(DurationMs, 95)
-    by outcome = tostring(Attributes["concierge.router.outcome"]), bin(TimeGenerated, 5m)
-| order by TimeGenerated asc
+```text
+RoutingPlan validation failed on attempt 1/2: [... "specials requires route=operations" ...]
 ```
 
-The `fallback` count and the p95 for `concierge.route` both jump at the moment of the upgrade.
+The logs show that it happens. They do not show what it costs per turn.
 
-The concierge logs also include a `Router validation exhausted` warning, but only the trace ties it to a specific customer turn, shows the wasted model calls, and shows which answers came from the fallback instead of the model.
+### 6. Confirm it in the trace
 
-### 5. Fix and verify
+Open a new specials transaction. The `concierge.route` span now has a `structured_output.validation_failed` event with `error.message = specials requires route=operations`, and two `chat <model>` spans instead of one. Rerun the scorecard: `calls_per_turn` steps from 1.0 to 2.0 at the deploy, and `p95_ms` rises with it.
 
-Roll back the prompt and check that traces return to one model call per turn with `outcome = model`:
+### 7. Fix and verify
 
-```bash
-helm upgrade fourth-coffee deploy/helm/fourth-coffee \
-  --namespace demo \
-  --reuse-values \
-  --set-string config.CONCIERGE_ROUTER_PROMPT_VERSION=v1 \
-  --wait
-```
+Open a pull request that sets the prompt version back to `"v1"` and merge it. After Argo CD syncs, the warning stops, new transactions show one model call, and the scorecard returns to `calls_per_turn = 1.0` with p95 back at the baseline.
 
 ### Why this fault
 
-Agent regressions rarely look like outages. Schema retries and safe fallbacks keep the experience working, which is the right design, but it also hides the cost: extra tokens, extra latency, and answers that no longer come from the model you think is serving them. The `concierge.route` span records the outcome and each validation failure, so you can see that cost per turn and across all traffic.
+Agent regressions rarely look like outages. Schema validation and retries keep the experience working, which is the right design, but they also hide the cost: extra tokens, extra latency, and on some models answers that come from a fallback instead of the model. Platform health signals cannot see it. The router span and its model calls show the cost per turn and across all traffic.
 
 ### Optional: capacity simulation
 

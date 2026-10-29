@@ -1,0 +1,17 @@
+let window = 30m;
+let routes = OTelSpans
+| where TimeGenerated > ago(window) and Name == "concierge.route"
+| where tostring(Attributes["concierge.operations_intent"]) == "specials"
+| project TraceId, RouteSpan = SpanId, DurationMs, TimeGenerated;
+let router = OTelSpans
+| where TimeGenerated > ago(window) and Name == "invoke_agent ConciergeRouter"
+| project TraceId, RouteSpan = ParentSpanId, AgentSpan = SpanId;
+let calls = OTelSpans
+| where TimeGenerated > ago(window) and Name startswith "chat "
+| summarize model_calls = count() by TraceId, AgentSpan = ParentSpanId;
+routes
+| join kind=leftouter router on TraceId, RouteSpan
+| join kind=leftouter calls on TraceId, AgentSpan
+| summarize model_calls = sum(coalesce(model_calls, 0)) by TraceId, RouteSpan, DurationMs, TimeGenerated
+| summarize turns = count(), calls_per_turn = round(avg(model_calls), 1), p50_ms = round(percentile(DurationMs, 50)), p95_ms = round(percentile(DurationMs, 95)) by bin(TimeGenerated, 2m)
+| order by TimeGenerated asc
